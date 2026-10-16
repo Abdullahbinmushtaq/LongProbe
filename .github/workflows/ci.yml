@@ -27,8 +27,8 @@ jobs:
       - uses: astral-sh/setup-uv@v4
         with:
           version: "latest"
-      - run: uv sync --dev
-      - run: uv run pytest tests/unit/ -v --tb=short
+      - run: uv sync --dev --python "${{ matrix.python-version }}"
+      - run: uv run pytest tests/unit/ tests/integration/test_reliability_workflow.py -v --tb=short --run-integration
 
   integration-tests:
     runs-on: ubuntu-latest
@@ -51,3 +51,10 @@ jobs:
           version: "latest"
       - run: uv sync
       - run: uv build
+      - name: Verify wheel in a base-only environment outside the checkout
+        run: |
+          uv venv "$RUNNER_TEMP/longprobe-wheel" --python 3.12
+          uv pip install --python "$RUNNER_TEMP/longprobe-wheel/bin/python" dist/*.whl
+          cd "$RUNNER_TEMP"
+          "$RUNNER_TEMP/longprobe-wheel/bin/python" -c 'import importlib.metadata as m, longprobe; assert m.version("longprobe") == longprobe.__version__'
+          "$RUNNER_TEMP/longprobe-wheel/bin/longprobe" --help

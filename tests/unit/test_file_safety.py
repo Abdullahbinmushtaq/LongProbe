@@ -89,3 +89,42 @@ def test_unwritable_destination_is_not_bypassed(tmp_path, monkeypatch):
     with pytest.raises(PermissionError):
         atomic_write_text(target, "new", overwrite=True)
     assert target.read_text() == "original"
+
+
+@pytest.mark.parametrize("stage", ["write", "flush"])
+def test_stream_failure_preserves_original_bytes(tmp_path, monkeypatch, stage):
+    import tempfile
+
+    target = tmp_path / "goldens.yaml"
+    target.write_bytes(b"trusted")
+    original_factory = tempfile.NamedTemporaryFile
+
+    class FailingStream:
+        def __init__(self, *args, **kwargs):
+            self.stream = original_factory(*args, **kwargs)
+
+        def __enter__(self):
+            self.stream.__enter__()
+            return self
+
+        def __exit__(self, *args):
+            return self.stream.__exit__(*args)
+
+        def __getattr__(self, key):
+            return getattr(self.stream, key)
+
+        def write(self, content):
+            if stage == "write":
+                raise OSError(errno.EIO, "injected write")
+            return self.stream.write(content)
+
+        def flush(self):
+            if stage == "flush":
+                raise OSError(errno.EIO, "injected flush")
+            return self.stream.flush()
+
+    monkeypatch.setattr("longprobe._files.tempfile.NamedTemporaryFile", FailingStream)
+    with pytest.raises(OSError):
+        atomic_write_text(target, "new", overwrite=True)
+    assert target.read_bytes() == b"trusted"
+    assert not list(tmp_path.glob(".*.tmp"))

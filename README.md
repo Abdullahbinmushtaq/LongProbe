@@ -107,6 +107,10 @@ This creates:
 - `goldens.yaml` — example golden questions
 - `longprobe.yaml` — configuration file
 
+The initial content is copied from fixed templates in CLI source. It does not read your documents or embeddings. Replace example questions with verified cases, or use `capture`/`generate --auto-capture` and review drafts with `edit`.
+
+Configuration errors and zero-question evaluations fail explicitly. Existing invalid golden files are preserved rather than replaced during generation. See the [working local HTTP quick start](docs/getting-started/quick-start.md) and [v0.1.3 reliability notes](docs/releases/v0.1.3.md).
+
 ### Define Golden Questions
 
 Edit `goldens.yaml` with your test cases:
@@ -134,7 +138,7 @@ questions:
 
   - id: "q3"
     question: "Who can sign contracts?"
-    match_mode: "semantic"      # embedding similarity
+    match_mode: "semantic"      # word-frequency similarity
     semantic_threshold: 0.80
     required_chunks:
       - "The following officers are authorized to sign"
@@ -148,9 +152,8 @@ Edit `longprobe.yaml`:
 ```yaml
 retriever:
   type: "chroma"
-  chroma:
-    persist_directory: "./chroma_db"
-    collection: "my_documents"
+  persist_directory: "./chroma_db"
+  collection: "my_documents"
 
 embedder:
   provider: "local"
@@ -215,7 +218,8 @@ longprobe diff --baseline v1.0
 longprobe watch --interval 2
 
 # Generate questions from documents
-longprobe generate ./docs --capture --auto
+longprobe generate ./docs --auto-capture
+longprobe edit
 ```
 
 ## Python API
@@ -359,12 +363,13 @@ retriever:
 ```yaml
 retriever:
   type: http
-  url: "http://localhost:8000/api/retrieve"
-  method: "POST"
-  body_template: '{"query": "{question}"}'
-  response_mapping:
-    results_path: "data.chunks"
-    text_field: "content"
+  http:
+    url: "http://localhost:8000/api/retrieve"
+    method: "POST"
+    body_template: '{"query": "{question}"}'
+    response_mapping:
+      results_path: "data.chunks"
+      text_field: "content"
 ```
 
 ## GitHub Actions
@@ -398,6 +403,10 @@ Case-insensitive substring matching. Checks if the required text appears anywher
 ### Semantic Match (`match_mode: "semantic"`)
 Word-frequency cosine similarity. Useful when exact text may vary but meaning should be preserved.
 
+## Current limitations
+
+Normal checks pass text directly to the retriever; `embedder` settings are not wired into this path. Pinecone/Qdrant need an embedding-aware custom adapter or application endpoint. Semantic matching uses word frequencies, not neural embeddings. The default pytest adapter fixture needs a user override. Baseline quality policy and general JSON stdout cleanup are deferred; this patch does not add rank/distance explanations.
+
 ## Development
 
 ```bash
@@ -418,13 +427,13 @@ uv run ruff format src/
 ## How It Works
 
 ```
-goldens.yaml → GoldenLoader → QueryEmbedder → RetrieverAdapter → RecallScorer
+goldens.yaml → GoldenSet → RetrieverAdapter → RecallScorer
                                                                       ↓
                                                                 BaselineStore → DiffReporter
 ```
 
 1. **Define** your Golden Questions + Required Fact Chunks in YAML
-2. **Embed** each question using your configured embedding model
+2. **Configure** your existing retriever; it manages text-to-vector conversion where supported
 3. **Retrieve** from your live vector store using the pluggable adapter
 4. **Score** each question by checking if required chunks appear in Top-K results
 5. **Compare** against saved baselines to detect regressions
