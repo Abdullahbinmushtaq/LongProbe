@@ -83,6 +83,8 @@ Together they cover the full RAG pipeline from ingestion to production monitorin
 
 ### Installation
 
+Requires **Python 3.11 or newer**.
+
 ```bash
 # Install with UV (recommended)
 uv pip install longprobe

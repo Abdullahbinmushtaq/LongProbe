@@ -35,6 +35,7 @@ with tempfile.TemporaryDirectory() as tmp:
     assert result.exit_code == 0, result.output
     assert not list(Path(tmp).iterdir())
     assert metadata.version('longprobe') == longprobe.__version__ == '0.1.3'
+    assert metadata.metadata("longprobe")["Requires-Python"] == ">=3.11"
     assert not str(longprobe.__file__).startswith(str(repo))
     for module in ['chromadb', 'pinecone', 'qdrant_client', 'langchain_core', 'llama_index', 'litellm', 'pytest']:
         assert importlib.util.find_spec(module) is None, module

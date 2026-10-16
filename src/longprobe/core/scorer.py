@@ -26,7 +26,7 @@ import time
 from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from .golden import GoldenQuestion, GoldenSet
 
@@ -219,7 +219,7 @@ class RecallScorer:
         return ProbeReport(
             golden_set_name=golden_set.name,
             golden_set_version=golden_set.version,
-            timestamp=datetime.now(timezone.utc).isoformat(),
+            timestamp=datetime.now(UTC).isoformat(),
             overall_recall=overall_recall,
             pass_rate=pass_rate,
             results=results,

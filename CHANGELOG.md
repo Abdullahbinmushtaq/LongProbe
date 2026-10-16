@@ -16,10 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Explicit `generate --output PATH --overwrite` for question-list replacement; incompatible output/auto-capture flags fail preflight.
-- Controlled HTTP workflow and failure-injection regression tests across Python 3.10–3.12.
+- Controlled HTTP workflow and failure-injection regression tests across supported Python versions.
 - Local HTTP quick-start fixture, accurate configuration examples, and recovery/known-limitations documentation.
 
 ### Compatibility
+- Minimum Python version is now 3.11; Python 3.10 support and its CI job have been removed.
 - Empty selections and invalid settings that previously passed or fell back to defaults now fail.
 - Use an installed editable checkout for development; the runtime version requires distribution metadata.
 - No baseline database/schema migration. Embedding integration, baseline-policy unification, default pytest fixture repair, and general JSON-output cleanup remain deferred.

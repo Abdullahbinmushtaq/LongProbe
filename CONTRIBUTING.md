@@ -163,7 +163,7 @@ LongProbe follows Python best practices and uses Ruff for linting and formatting
 
 ### Key Guidelines
 
-- **Python 3.10+** syntax and features
+- **Python 3.11+** syntax and features
 - **Type hints** for all function signatures
 - **Docstrings** for all public modules, classes, and functions (Google style)
 - **Line length** - 100 characters maximum

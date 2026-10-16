@@ -22,14 +22,13 @@ classifiers = [
     "Topic :: Software Development :: Quality Assurance",  
     "Topic :: Scientific/Engineering :: Artificial Intelligence",  
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Framework :: Pytest", 
 ]
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
     "typer>=0.27.1",
     "rich>=15.0.0",
@@ -97,7 +96,7 @@ dev = [
 ]
 
 [tool.ruff]
-target-version = "py310"
+target-version = "py311"
 line-length = 100
 src = ["src"]
 
