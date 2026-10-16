@@ -20,6 +20,7 @@ import sys
 import time
 from dataclasses import asdict
 from datetime import datetime
+from functools import wraps
 from pathlib import Path
 from typing import Any
 
@@ -36,7 +37,7 @@ from longprobe.adapters import (
     PineconeAdapter,
     QdrantAdapter,
 )
-from longprobe.config import GeneratorConfig, ProbeConfig
+from longprobe.config import ConfigurationError, GeneratorConfig, ProbeConfig
 from longprobe.core.baseline import BaselineStore
 from longprobe.core.diff import DiffReporter
 from longprobe.core.docparser import DocumentParser
@@ -209,26 +210,26 @@ def _load_golden_set(path: Path) -> GoldenSet | None:
 
 
 def _load_config(path: Path) -> ProbeConfig:
-    """Load configuration from YAML, falling back to defaults.
+    """Require the selected CLI configuration; never silently substitute defaults."""
+    return ProbeConfig.from_yaml(str(path))
 
-    A warning is printed when the file does not exist so the user knows they
-    are running with built-in defaults.
-    """
-    if not path.exists():
-        console.print(
-            f"[bold yellow]Warning:[/bold yellow] Config file not found: {path}",
-        )
-        console.print("Using default configuration values.\n")
-        return ProbeConfig.defaults()
 
-    try:
-        return ProbeConfig.from_yaml(str(path))
-    except Exception as exc:
-        console.print(
-            f"[bold yellow]Warning:[/bold yellow] Failed to parse config ({exc}). "
-            "Using defaults.\n",
-        )
-        return ProbeConfig.defaults()
+def _command_errors(fn):
+    """Present expected input failures without leaking YAML/request contents."""
+    @wraps(fn)
+    def wrapped(*args, **kwargs):
+        try:
+            return fn(*args, **kwargs)
+        except ConfigurationError as exc:
+            console.print(f"Configuration error: {exc}", markup=False)
+            raise typer.Exit(1) from None
+        except OSError as exc:
+            console.print(f"File operation failed for {exc.filename or 'selected destination'}; check the path and permissions. Run longprobe init if configuration is missing.", markup=False)
+            raise typer.Exit(1) from None
+        except ValueError:
+            console.print("Invalid input; check golden questions and command options. Existing files were not replaced.")
+            raise typer.Exit(1) from None
+    return wrapped
 
 
 def _create_adapter_from_config(config: ProbeConfig):
@@ -529,6 +530,11 @@ def _run_probe(
 
         # 3. Create adapter
         progress.add_task("Initialising retriever adapter...", total=None)
+        if threshold_override is not None:
+            config.scoring.recall_threshold = threshold_override
+        if top_k_override is not None and (type(top_k_override) is not int or top_k_override <= 0):
+            raise ConfigurationError("top_k must be a positive integer.")
+        config.validate_for("evaluate")
         adapter = _create_adapter_from_config(config)
 
     # 4. Create scorer
@@ -573,6 +579,7 @@ def _run_probe(
 
 
 @app.command()
+@_command_errors
 def init(
     force: bool = typer.Option(
         False,
@@ -635,6 +642,7 @@ def init(
 
 
 @app.command()
+@_command_errors
 def check(
     goldens: Path = typer.Option(
         "goldens.yaml",
@@ -710,6 +718,7 @@ def check(
 
 
 @baseline_app.command("save")
+@_command_errors
 def baseline_save(
     label: str = typer.Option(
         "latest",
@@ -790,6 +799,7 @@ def baseline_save(
 
 
 @baseline_app.command("list")
+@_command_errors
 def baseline_list(
     db_path: Path = typer.Option(
         ".longprobe/baselines.db",
@@ -833,6 +843,7 @@ def baseline_list(
 
 
 @baseline_app.command("delete")
+@_command_errors
 def baseline_delete(
     label: str = typer.Option(
         ...,
@@ -874,6 +885,7 @@ def baseline_delete(
 
 
 @app.command()
+@_command_errors
 def diff(
     baseline_a: str | None = typer.Argument(
         None,
@@ -932,6 +944,7 @@ def diff(
 ) -> None:
     """Compare probe results against a saved baseline, or compare two historical snapshots."""
     cfg = _load_config(config)
+    cfg.validate_for("baseline")
     store = BaselineStore(db_path=cfg.baseline.db_path)
 
     # Mode 1: Compare two historical baselines: longprobe diff baseline_a baseline_b
@@ -1022,6 +1035,7 @@ def diff(
 
 
 @app.command()
+@_command_errors
 def watch(
     goldens: Path = typer.Option(
         "goldens.yaml",
@@ -1125,6 +1139,7 @@ def watch(
 
 
 @app.command()
+@_command_errors
 def capture(
     question: list[str] = typer.Option(
         [],
@@ -1203,6 +1218,7 @@ def capture(
 
     # 3. Load config and adapter
     cfg = _load_config(config)
+    cfg.validate_for("capture")
     adapter = _create_adapter_from_config(cfg)
 
     existing_ids = {q.id for q in golden_set.questions}
@@ -1311,6 +1327,7 @@ def capture(
 
 
 @app.command()
+@_command_errors
 def generate(
     path: Path = typer.Argument(
         ...,
@@ -1407,25 +1424,11 @@ def generate(
 
     effective_n = num_questions if num_questions > 0 else gen_config.num_questions
 
-    # 2. Check API key early (skip for local providers like ollama).
-    if not gen_config.api_key and gen_config.provider.lower() not in ("ollama", "local"):
-        # Try common env vars based on provider.
-        import os
-        env_hints = {
-            "openai": "OPENAI_API_KEY",
-            "anthropic": "ANTHROPIC_API_KEY",
-            "gemini": "GEMINI_API_KEY",
-            "google": "GOOGLE_API_KEY",
-        }
-        env_var = env_hints.get(gen_config.provider, f"{gen_config.provider.upper()}_API_KEY")
-        if not os.environ.get(env_var):
-            console.print(
-                f"[bold red]Error:[/bold red] No API key configured for "
-                f"{gen_config.provider}.\n"
-                f"Set the environment variable [cyan]{env_var}[/cyan] or add "
-                f"[cyan]generator.api_key[/cyan] to [bold]{config}[/bold]."
-            )
-            raise typer.Exit(1)
+    cfg.generator = gen_config
+    cfg.validate_for("auto_capture" if auto_capture else "generate")
+    gen_config = cfg.generator
+    if num_questions < 0 or top_k <= 0:
+        raise ConfigurationError("num_questions must be nonnegative and top_k must be positive.")
 
     # 3. Parse documents.
     with Progress(
@@ -1692,6 +1695,7 @@ def edit_delete_question(golden_set: GoldenSet, question_id: str) -> bool:
 
 
 @app.command()
+@_command_errors
 def edit(
     goldens: Path = typer.Option(
         "goldens.yaml",
@@ -1818,6 +1822,7 @@ def edit(
 
 
 @app.command()
+@_command_errors
 def explain(
     question_id: str = typer.Argument(
         ...,

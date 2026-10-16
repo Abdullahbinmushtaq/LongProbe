@@ -81,13 +81,16 @@ class LongProbe:
         self.golden_set = raw_set if include_drafts else raw_set.filter_by_status("approved")
 
         config_file = Path(config_path)
-        if config_file.exists():
+        try:
             self.config = ProbeConfig.from_yaml(str(config_file))
-        else:
+        except FileNotFoundError:
+            if config_file != Path("longprobe.yaml"):
+                raise
             self.config = ProbeConfig.defaults()
 
         if recall_threshold is not None:
             self.config.scoring.recall_threshold = recall_threshold
+        self.config.validate_for("evaluate", owns_retriever=False)
 
         self.scorer = RecallScorer(
             recall_threshold=self.config.scoring.recall_threshold

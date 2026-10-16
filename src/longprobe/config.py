@@ -234,249 +234,164 @@ class ProbeConfig:
     baseline: BaselineConfig = field(default_factory=BaselineConfig)
     generator: GeneratorConfig = field(default_factory=GeneratorConfig)
 
-    # ------------------------------------------------------------------
-    # Construction helpers
-    # ------------------------------------------------------------------
-
     @classmethod
     def defaults(cls) -> ProbeConfig:
-        """Return a :class:`ProbeConfig` instance with every field set to its
-        declared default value.
-
-        This is useful for quick experimentation or as a base that is later
-        selectively overridden.
-        """
+        """Return documented defaults for deliberate programmatic use."""
         return cls()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ProbeConfig:
-        """Build a :class:`ProbeConfig` from a plain dictionary.
-
-        Unknown keys in *data* are silently ignored so that configuration
-        files can contain extra provider-specific fields without breaking
-        parsing.
-
-        Args:
-            data: Dictionary of configuration values.  Nested sections
-                (``retriever``, ``embedder``, ``scoring``, ``baseline``) are
-                mapped to their respective sub-config dataclasses.
-
-        Returns:
-            A fully-populated :class:`ProbeConfig` instance.
-        """
-        if not isinstance(data, dict):
-            raise ValueError(
-                f"ProbeConfig.from_dict expects a dict, got {type(data).__name__}."
-            )
-
-        # Expand ``${ENV_VAR}`` in all string values, recursively.
-        data = _expand_env_recursive(data)
-
-        retriever_raw = data.get("retriever", {})
-        embedder_raw = data.get("embedder", {})
-        scoring_raw = data.get("scoring", {})
-        baseline_raw = data.get("baseline", {})
-        generator_raw = data.get("generator", {})
-
-        retriever = _build_retriever_config(retriever_raw)
-        embedder = _build_embedder_config(embedder_raw)
-        scoring = _build_scoring_config(scoring_raw)
-        baseline = _build_baseline_config(baseline_raw)
-        generator = _build_generator_config(generator_raw)
-
-        return cls(
-            retriever=retriever,
-            embedder=embedder,
-            scoring=scoring,
-            baseline=baseline,
-            generator=generator,
-        )
+        """Parse supplied values strictly; omitted fields retain defaults."""
+        return _build_section(cls, _expand_env_recursive(data), "")
 
     @classmethod
     def from_yaml(cls, path: str) -> ProbeConfig:
-        """Load configuration from a YAML file.
-
-        Args:
-            path: Filesystem path to the YAML configuration file.
-
-        Returns:
-            A fully-populated :class:`ProbeConfig` instance.
-
-        Raises:
-            FileNotFoundError: If *path* does not exist.
-            yaml.YAMLError: If the file cannot be parsed as YAML.
-            ValueError: If the top-level structure is not a mapping.
-        """
-        import os as _os
-
-        if not _os.path.isfile(path):
-            raise FileNotFoundError(f"Configuration file not found: {path}")
-
-        with open(path, encoding="utf-8") as fh:
-            data = yaml.safe_load(fh)
-
-        if not isinstance(data, dict):
-            raise ValueError(
-                f"Expected a YAML mapping at the top level of '{path}', "
-                f"got {type(data).__name__}."
-            )
-
+        """Load a configuration without silently replacing invalid input."""
+        try:
+            with open(path, encoding="utf-8") as fh:
+                data = yaml.safe_load(fh)
+        except yaml.YAMLError as exc:
+            mark = getattr(exc, "problem_mark", None)
+            location = f" at line {mark.line + 1}, column {mark.column + 1}" if mark else ""
+            raise ConfigurationError(f"Invalid YAML in {path}{location}; correct the syntax.") from None
+        except UnicodeError:
+            raise ConfigurationError(f"Configuration {path} must contain UTF-8 text.") from None
         return cls.from_dict(data)
 
+    def validate_for(self, operation: str, *, owns_retriever: bool = True) -> None:
+        """Validate only providers used by this operation, before client calls."""
+        from dataclasses import asdict
+        from urllib.parse import urlsplit
 
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
+        normalized = self.from_dict(asdict(self))
+        for name in ("retriever", "embedder", "scoring", "baseline", "generator"):
+            setattr(self, name, getattr(normalized, name))
+
+        if operation in {"evaluate", "baseline"}:
+            _active(self.baseline.db_path, "baseline.db_path", required=True)
+        if owns_retriever and operation in {"evaluate", "capture", "auto_capture"}:
+            r = self.retriever
+            if r.type not in {"chroma", "pinecone", "qdrant", "http"}:
+                raise ConfigurationError("retriever.type must select chroma, pinecone, qdrant, or http; use the Python API for framework retrievers.")
+            if r.type == "chroma":
+                _active(r.collection, "retriever.collection", required=True)
+                _active(r.persist_directory, "retriever.persist_directory")
+            elif r.type == "http":
+                _active(asdict(r.http), "retriever.http")
+                try:
+                    url = urlsplit(r.http.url)
+                    valid = url.scheme in {"http", "https"} and bool(url.hostname)
+                    valid = valid and (url.port is None or 1 <= url.port <= 65535)
+                except ValueError:
+                    valid = False
+                if not valid:
+                    raise ConfigurationError("retriever.http.url must be an HTTP(S) endpoint URL.")
+                if r.http.method.upper() not in {"POST", "GET"}:
+                    raise ConfigurationError("retriever.http.method must be POST or GET.")
+            elif r.type == "pinecone":
+                _active(r.index_name, "retriever.index_name", required=True)
+                _active(r.namespace, "retriever.namespace")
+                _credential(r.api_key, "retriever.api_key", "PINECONE_API_KEY")
+            else:
+                _active(r.collection, "retriever.collection", required=True)
+                _active(r.host, "retriever.host", required=True)
+                _active(r.api_key, "retriever.api_key")
+        if operation in {"generate", "auto_capture"}:
+            g = self.generator
+            _active(asdict(g), "generator")
+            _active(g.provider, "generator.provider", required=True)
+            _active(g.model, "generator.model", required=True)
+            if g.provider.lower() not in {"ollama", "local"}:
+                env_name = {"openai": "OPENAI_API_KEY", "anthropic": "ANTHROPIC_API_KEY", "gemini": "GEMINI_API_KEY", "google": "GOOGLE_API_KEY"}.get(g.provider.lower(), f"{g.provider.upper()}_API_KEY")
+                _credential(g.api_key, "generator.api_key", env_name)
+
+
+class ConfigurationError(ValueError):
+    """Safe, actionable configuration failure without input values."""
+
 
 def _expand_env_recursive(obj: Any) -> Any:
-    """Walk a nested structure and expand ``${ENV_VAR}`` in every string."""
     if isinstance(obj, str):
         return _expand_env(obj)
     if isinstance(obj, dict):
         return {k: _expand_env_recursive(v) for k, v in obj.items()}
     if isinstance(obj, list):
-        return [_expand_env_recursive(item) for item in obj]
+        return [_expand_env_recursive(v) for v in obj]
     return obj
 
 
-def _build_http_response_mapping(raw: dict[str, Any]) -> HttpResponseMapping:
-    """Construct an :class:`HttpResponseMapping` from a raw dict."""
+def _build_section(cls, raw: Any, path: str):
+    import math
+    from dataclasses import fields, is_dataclass
+
     if not isinstance(raw, dict):
-        raw = {}
-    return HttpResponseMapping(
-        results_path=_str(raw, "results_path", "results"),
-        id_field=_str(raw, "id_field", "id"),
-        text_field=_str(raw, "text_field", "text"),
-        score_field=_str(raw, "score_field", "score"),
-    )
+        raise ConfigurationError(f"{path or 'configuration'} must be a mapping.")
+    defaults = cls()
+    values = {}
+    known = {f.name for f in fields(cls)}
+    for f in fields(cls):
+        default = getattr(defaults, f.name)
+        value = raw.get(f.name, default)
+        key = f"{path}.{f.name}" if path else f.name
+        if is_dataclass(default):
+            values[f.name] = _build_section(type(default), raw.get(f.name, {}), key)
+            continue
+        if isinstance(default, dict):
+            if not isinstance(value, dict):
+                raise ConfigurationError(f"{key} must be a mapping.")
+            if f.name == "headers" and any(not isinstance(k, str) or not isinstance(v, str) for k, v in value.items()):
+                raise ConfigurationError(f"{key} must map header names to strings.")
+        elif isinstance(default, bool):
+            forms = {"true": True, "1": True, "yes": True, "on": True, "false": False, "0": False, "no": False, "off": False}
+            if isinstance(value, str) and value.lower() in forms:
+                value = forms[value.lower()]
+            if not isinstance(value, bool):
+                raise ConfigurationError(f"{key} must be a boolean (true or false).")
+        elif isinstance(default, int):
+            if isinstance(value, str) and re.fullmatch(r"[+-]?\d+", value.strip()):
+                value = int(value)
+            if type(value) is not int:
+                raise ConfigurationError(f"{key} must be an integer.")
+        elif isinstance(default, float):
+            if isinstance(value, str):
+                try:
+                    value = float(value)
+                except ValueError:
+                    raise ConfigurationError(f"{key} must be a finite number.") from None
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+                raise ConfigurationError(f"{key} must be a finite number.")
+            value = float(value)
+        elif not isinstance(value, str):
+            raise ConfigurationError(f"{key} must be a string.")
+        if f.name in {"batch_size", "timeout", "num_questions", "max_tokens"} and value <= 0:
+            raise ConfigurationError(f"{key} must be positive.")
+        if key == "scoring.recall_threshold" and not 0 <= value <= 1:
+            raise ConfigurationError(f"{key} must be between 0 and 1.")
+        if key == "retriever.port" and not 1 <= value <= 65535:
+            raise ConfigurationError(f"{key} must be between 1 and 65535.")
+        if key == "embedder.dimensions" and value < 0:
+            raise ConfigurationError(f"{key} must be nonnegative.")
+        values[f.name] = value
+    if cls is RetrieverConfig:
+        values["extra"] = {**values["extra"], **{k: v for k, v in raw.items() if k not in known}}
+    return cls(**values)
 
 
-def _build_http_config(raw: dict[str, Any]) -> HttpRetrieverConfig:
-    """Construct an :class:`HttpRetrieverConfig` from a raw dict."""
-    if not isinstance(raw, dict):
-        raw = {}
-    return HttpRetrieverConfig(
-        url=_str(raw, "url", ""),
-        method=_str(raw, "method", "POST"),
-        body_template=_str(
-            raw, "body_template",
-            '{"query": "{question}", "top_k": {top_k}}',
-        ),
-        headers={str(k): str(v) for k, v in (raw.get("headers") or {}).items()},
-        response_mapping=_build_http_response_mapping(raw.get("response_mapping") or {}),
-        timeout=_int(raw, "timeout", 30),
-    )
+def _active(value: Any, path: str, *, required: bool = False) -> None:
+    if isinstance(value, dict):
+        for key, child in value.items():
+            # Header names and extra keys may contain secrets: do not expose them.
+            child_path = path if path.endswith("headers") else f"{path}.{key}"
+            _active(child, child_path)
+    elif isinstance(value, str):
+        missing = _ENV_PATTERN.search(value)
+        if missing:
+            raise ConfigurationError(f"{path} references unset environment variable {missing.group(1)}; set it before running.")
+        if required and not value.strip():
+            raise ConfigurationError(f"{path} must be non-empty.")
 
 
-def _build_retriever_config(raw: dict[str, Any]) -> RetrieverConfig:
-    """Construct a :class:`RetrieverConfig`, isolating unknown fields into
-    ``extra``."""
-    if not isinstance(raw, dict):
-        raw = {}
-
-    known_keys = {
-        "type", "collection", "persist_directory", "index_name",
-        "namespace", "host", "port", "api_key", "http", "extra",
-    }
-    extra = {k: v for k, v in raw.items() if k not in known_keys}
-
-    return RetrieverConfig(
-        type=_str(raw, "type", "langchain"),
-        collection=_str(raw, "collection", ""),
-        persist_directory=_str(raw, "persist_directory", ""),
-        index_name=_str(raw, "index_name", ""),
-        namespace=_str(raw, "namespace", ""),
-        host=_str(raw, "host", ""),
-        port=_int(raw, "port", 6333),
-        api_key=_str(raw, "api_key", ""),
-        http=_build_http_config(raw.get("http") or {}),
-        extra={**dict(raw.get("extra") or {}), **extra},
-    )
-
-
-def _build_embedder_config(raw: dict[str, Any]) -> EmbedderConfig:
-    if not isinstance(raw, dict):
-        raw = {}
-
-    return EmbedderConfig(
-        provider=_str(raw, "provider", "openai"),
-        model=_str(raw, "model", "text-embedding-3-small"),
-        dimensions=_int(raw, "dimensions", 0),
-        batch_size=_int(raw, "batch_size", 32),
-    )
-
-
-def _build_scoring_config(raw: dict[str, Any]) -> ScoringConfig:
-    if not isinstance(raw, dict):
-        raw = {}
-
-    return ScoringConfig(
-        recall_threshold=_float(raw, "recall_threshold", 0.8),
-        fail_on_regression=_bool(raw, "fail_on_regression", True),
-    )
-
-
-def _build_baseline_config(raw: dict[str, Any]) -> BaselineConfig:
-    if not isinstance(raw, dict):
-        raw = {}
-
-    return BaselineConfig(
-        db_path=_str(raw, "db_path", ".longprobe/baselines.db"),
-        auto_compare=_bool(raw, "auto_compare", True),
-    )
-
-
-def _build_generator_config(raw: dict[str, Any]) -> GeneratorConfig:
-    if not isinstance(raw, dict):
-        raw = {}
-
-    return GeneratorConfig(
-        provider=_str(raw, "provider", "openai"),
-        model=_str(raw, "model", "gpt-5.5-instant"),
-        api_key=_str(raw, "api_key", ""),
-        base_url=_str(raw, "base_url", ""),
-        num_questions=_int(raw, "num_questions", 50),
-        temperature=_float(raw, "temperature", 0.7),
-        max_tokens=_int(raw, "max_tokens", 4096),
-    )
-
-
-# ---------------------------------------------------------------------------
-# Type-safe field extractors
-# ---------------------------------------------------------------------------
-
-def _str(d: dict[str, Any], key: str, default: str) -> str:
-    val = d.get(key, default)
-    return str(val) if val is not None else default
-
-
-def _int(d: dict[str, Any], key: str, default: int) -> int:
-    val = d.get(key, default)
-    if val is None:
-        return default
-    try:
-        return int(val)
-    except (TypeError, ValueError):
-        return default
-
-
-def _float(d: dict[str, Any], key: str, default: float) -> float:
-    val = d.get(key, default)
-    if val is None:
-        return default
-    try:
-        return float(val)
-    except (TypeError, ValueError):
-        return default
-
-
-def _bool(d: dict[str, Any], key: str, default: bool) -> bool:
-    val = d.get(key, default)
-    if val is None:
-        return default
-    if isinstance(val, bool):
-        return val
-    # Accept common string truthy/falsy values.
-    if isinstance(val, str):
-        return val.lower() in ("true", "1", "yes", "on")
-    return bool(val)
+def _credential(value: str, path: str, env_name: str) -> None:
+    _active(value, path)
+    if not value.strip() and not os.environ.get(env_name, "").strip():
+        raise ConfigurationError(f"{path} or environment variable {env_name} is required.")

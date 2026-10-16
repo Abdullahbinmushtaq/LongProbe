@@ -28,7 +28,7 @@ def _setup_test_environment(tmp_path: Path, questions: list[dict]) -> tuple[Path
     config_data = {
         "retriever": {
             "type": "http",
-            "url": "http://localhost:8000/retrieve",
+            "http": {"url": "http://localhost:8000/retrieve"},
         },
         "scoring": {
             "recall_threshold": 0.85,
