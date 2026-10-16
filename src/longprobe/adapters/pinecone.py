@@ -64,6 +64,10 @@ class PineconeAdapter(AbstractRetrieverAdapter):
 
         try:
             from pinecone import Pinecone
+        except ImportError:
+            raise ImportError("Install Pinecone support with: pip install longprobe[pinecone]") from None
+
+        try:
             pc = Pinecone(api_key=self.api_key)
             index = pc.Index(self.index_name)
             response = index.query(
