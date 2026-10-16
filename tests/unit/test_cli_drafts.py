@@ -5,8 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock
 
-import pytest
-import typer
 import yaml
 
 from longprobe.cli.main import check, diff

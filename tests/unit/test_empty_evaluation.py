@@ -58,3 +58,29 @@ def test_draft_only_python_suite_is_not_evaluated_by_default(tmp_path, monkeypat
         LongProbe(adapter, golden_set=suite).run()
     adapter.retrieve.assert_not_called()
     assert LongProbe(adapter, golden_set=suite, include_drafts=True).run().pass_rate == 1
+
+
+def test_watch_reports_empty_iteration_and_keeps_waiting(tmp_path, monkeypatch):
+    import os
+
+    monkeypatch.chdir(tmp_path)
+    target = tmp_path / "goldens.yaml"
+    GoldenSet("test", "1", []).to_yaml(str(target))
+    mtime = target.stat().st_mtime
+    sleeps = []
+
+    def tick(_):
+        sleeps.append(True)
+        if len(sleeps) == 1:
+            os.utime(target, (mtime + 10, mtime + 10))
+        else:
+            raise KeyboardInterrupt
+
+    display = Mock()
+    monkeypatch.setattr("longprobe.cli.main.time.sleep", tick)
+    monkeypatch.setattr("longprobe.cli.main._display_results", display)
+    result = CliRunner().invoke(app, ["watch"])
+    assert result.exit_code == 0, result.output
+    assert "No questions" in result.output
+    assert len(sleeps) == 2
+    display.assert_not_called()

@@ -9,13 +9,11 @@ mock retriever.
 from __future__ import annotations
 
 from datetime import datetime
-from unittest.mock import MagicMock
 
 import pytest
 
 from longprobe.core.golden import GoldenQuestion, GoldenSet
-from longprobe.core.scorer import ProbeReport, QuestionResult, RecallScorer
-
+from longprobe.core.scorer import ProbeReport, RecallScorer
 
 # ---------------------------------------------------------------------------
 # Fixtures
