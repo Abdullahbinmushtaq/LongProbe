@@ -449,14 +449,9 @@ class TestScoreAll:
         assert parsed is not None
 
     def test_score_all_empty_golden_set(self, scorer):
-        """An empty golden set should produce recall=1.0 and pass_rate=1.0."""
         empty_gs = GoldenSet(name="empty", version="0.0.0", questions=[])
-
-        report = scorer.score_all(empty_gs, lambda q, k: [])
-
-        assert report.overall_recall == 1.0
-        assert report.pass_rate == 1.0
-        assert report.results == []
+        with pytest.raises(ValueError, match="No questions"):
+            scorer.score_all(empty_gs, lambda q, k: [])
 
 
 # ---------------------------------------------------------------------------

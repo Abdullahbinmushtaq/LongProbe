@@ -44,7 +44,7 @@ from longprobe.core.docparser import DocumentParser
 from longprobe.core.explain import explain_failure
 from longprobe.core.generator import QuestionGenerator
 from longprobe.core.golden import GoldenQuestion, GoldenSet, generate_question_id
-from longprobe.core.scorer import ProbeReport, RecallScorer
+from longprobe.core.scorer import EmptyEvaluationError, ProbeReport, RecallScorer
 
 # ---------------------------------------------------------------------------
 # App setup
@@ -200,12 +200,6 @@ def _load_golden_set(path: Path) -> GoldenSet | None:
         )
         return None
 
-    if not golden_set.questions:
-        console.print(
-            "[bold yellow]Warning:[/bold yellow] Golden set contains no questions.",
-        )
-        return None
-
     return golden_set
 
 
@@ -220,6 +214,9 @@ def _command_errors(fn):
     def wrapped(*args, **kwargs):
         try:
             return fn(*args, **kwargs)
+        except EmptyEvaluationError as exc:
+            console.print(str(exc), markup=False)
+            raise typer.Exit(1) from None
         except ConfigurationError as exc:
             console.print(f"Configuration error: {exc}", markup=False)
             raise typer.Exit(1) from None
@@ -503,11 +500,13 @@ def _run_probe(
         if golden_set is None:
             raise typer.Exit(1)
 
+        if not golden_set.questions:
+            raise EmptyEvaluationError("No questions in golden set; add golden questions before checking.")
+
         if tags:
             golden_set = golden_set.filter_by_tags(tags)
             if not golden_set.questions:
-                console.print(f"[bold yellow]Warning:[/bold yellow] No questions match the provided tags: {tags}")
-                raise typer.Exit(0)
+                raise EmptyEvaluationError("No questions match the selected tags; correct the tags or add matching questions.")
 
         draft_count = sum(1 for q in golden_set.questions if q.status.lower() == "draft")
         if not include_drafts:
@@ -518,11 +517,7 @@ def _run_probe(
                     f"Run [cyan]longprobe edit[/cyan] to review and approve.[/dim]\n"
                 )
             if not golden_set.questions:
-                console.print(
-                    "[bold yellow]Warning:[/bold yellow] No approved golden questions found.\n"
-                    "Run [cyan]longprobe edit[/cyan] to review draft questions or use [cyan]--include-drafts[/cyan]."
-                )
-                raise typer.Exit(0)
+                raise EmptyEvaluationError("No approved questions remain; run longprobe edit to approve drafts or use --include-drafts.")
 
         # 2. Load config
         progress.add_task("Loading config...", total=None)

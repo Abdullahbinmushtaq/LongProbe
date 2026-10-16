@@ -103,6 +103,8 @@ class LongProbe:
 
     def run(self, top_k_override: int | None = None) -> ProbeReport:
         """Run the probe against the golden set and return a report."""
+        self._last_report = None
+        self.config.validate_for("evaluate", owns_retriever=False)
         report = self.scorer.score_all(
             self.golden_set,
             self.adapter.retrieve,

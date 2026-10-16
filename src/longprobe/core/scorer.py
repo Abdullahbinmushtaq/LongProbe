@@ -96,6 +96,10 @@ class ProbeReport:
 # ---------------------------------------------------------------------------
 
 
+class EmptyEvaluationError(ValueError):
+    """No questions remain to evaluate; this is never a successful check."""
+
+
 class RecallScorer:
     """Scores retrieval results against a golden set using configurable
     matching strategies.
@@ -191,6 +195,10 @@ class RecallScorer:
         Returns:
             A :class:`ProbeReport` summarising the evaluation run.
         """
+        if not golden_set.questions:
+            raise EmptyEvaluationError("No questions to evaluate; add or approve golden questions.")
+        if top_k_override is not None and (type(top_k_override) is not int or top_k_override <= 0):
+            raise ValueError("top_k_override must be a positive integer.")
         results: list[QuestionResult] = []
 
         for question in golden_set.questions:
@@ -204,13 +212,9 @@ class RecallScorer:
             result.latency_ms = elapsed * 1000.0
             results.append(result)
 
-        # Aggregate metrics.
-        if results:
-            overall_recall = sum(r.recall_score for r in results) / len(results)
-            pass_rate = sum(1 for r in results if r.passed) / len(results)
-        else:
-            overall_recall = 1.0
-            pass_rate = 1.0
+        # Every completed evaluation contains at least one question.
+        overall_recall = sum(r.recall_score for r in results) / len(results)
+        pass_rate = sum(1 for r in results if r.passed) / len(results)
 
         return ProbeReport(
             golden_set_name=golden_set.name,
