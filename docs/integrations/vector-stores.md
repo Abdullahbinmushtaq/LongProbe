@@ -2,4 +2,4 @@
 
 Documentation coming soon.
 
-See the [README](../../README.md) for now.
+See the [quick start](../getting-started/quick-start.md) for now.

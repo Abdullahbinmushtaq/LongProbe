@@ -4,11 +4,18 @@ import importlib.metadata
 import subprocess
 import sys
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 
 import longprobe
-from longprobe.adapters import PineconeAdapter, QdrantAdapter
+from longprobe.adapters import (
+    ChromaAdapter,
+    LangChainRetrieverAdapter,
+    LlamaIndexRetrieverAdapter,
+    PineconeAdapter,
+    QdrantAdapter,
+)
 
 
 def test_installed_version_matches_runtime():
@@ -42,6 +49,13 @@ def test_missing_optional_sdk_has_install_guidance(adapter, module, monkeypatch)
     monkeypatch.setitem(sys.modules, module, None)
     with pytest.raises(ImportError, match=r"[Ii]nstall"):
         adapter.retrieve(query_embedding=[0.1, 0.2])
+
+
+@pytest.mark.parametrize("adapter,module", [(ChromaAdapter("test"), "chromadb"), (LangChainRetrieverAdapter(Mock()), "langchain_core"), (LlamaIndexRetrieverAdapter(Mock()), "llama_index")])
+def test_text_adapter_missing_sdk_has_install_guidance(adapter, module, monkeypatch):
+    monkeypatch.setitem(sys.modules, module, None)
+    with pytest.raises(ImportError, match=r"[Ii]nstall"):
+        adapter.retrieve("test question")
 
 
 def test_all_source_modules_parse():
