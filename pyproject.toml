@@ -86,7 +86,7 @@ longprobe = "longprobe.pytest_plugin"
 packages = ["src/longprobe"]
 
 [tool.hatch.build.targets.sdist]
-include = ["src/longprobe", "tests", "examples", "scripts", "README.md", "LICENSE"]
+include = ["src/longprobe", "tests", "examples", "README.md", "LICENSE"]
 
 [dependency-groups]
 dev = [
