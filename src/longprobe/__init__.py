@@ -84,7 +84,7 @@ class LongProbe:
         try:
             self.config = ProbeConfig.from_yaml(str(config_file))
         except FileNotFoundError:
-            if config_file != Path("longprobe.yaml"):
+            if config_file != Path("longprobe.yaml") or config_file.is_symlink():
                 raise
             self.config = ProbeConfig.defaults()
 

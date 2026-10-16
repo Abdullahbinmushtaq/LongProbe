@@ -110,3 +110,18 @@ def test_missing_cli_config_fails_with_recovery(tmp_path):
     result = CliRunner().invoke(app, ["diff", "--config", str(tmp_path / "missing.yaml")])
     assert result.exit_code != 0
     assert "init" in result.output
+
+
+def test_broken_default_config_symlink_is_not_treated_as_absence(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "longprobe.yaml").symlink_to(tmp_path / "missing-target.yaml")
+    with pytest.raises(FileNotFoundError):
+        LongProbe(Mock(), golden_set=GoldenSet("test", "1", []))
+
+
+def test_existing_invalid_python_config_never_creates_baseline(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "longprobe.yaml").write_text("scoring: wrong")
+    with pytest.raises(ConfigurationError):
+        LongProbe(Mock(), golden_set=GoldenSet("test", "1", []))
+    assert not (tmp_path / ".longprobe").exists()
