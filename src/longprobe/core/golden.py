@@ -16,11 +16,12 @@ Typical usage::
 
 from __future__ import annotations
 
-import os
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import Any
 
 import yaml
+
+from longprobe._files import atomic_write_text
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -100,6 +101,8 @@ class GoldenSet:
         seen_ids: set[str] = set()
 
         for idx, raw in enumerate(questions):
+            if not isinstance(raw, dict):
+                raise ValueError(f"Question at index {idx} must be a mapping.")
             qid = raw.get("id")
 
             # -- unique id ------------------------------------------------
@@ -116,7 +119,7 @@ class GoldenSet:
             seen_ids.add(qid)
 
             # -- question text --------------------------------------------
-            if not raw.get("question", "").strip():
+            if not isinstance(raw.get("question"), str) or not raw["question"].strip():
                 raise ValueError(
                     f"Question '{qid}' has an empty 'question' field."
                 )
@@ -127,6 +130,13 @@ class GoldenSet:
                 raise ValueError(
                     f"Question '{qid}' must have a non-empty 'required_chunks' list."
                 )
+
+            if any(not isinstance(c, str) or not c.strip() for c in required):
+                raise ValueError(f"Question '{qid}' requires non-empty string chunks.")
+            if not isinstance(raw.get("tags", []), list):
+                raise ValueError(f"Question '{qid}' tags must be a list.")
+            if not isinstance(raw.get("metadata", {}), dict):
+                raise ValueError(f"Question '{qid}' metadata must be a mapping.")
 
             # -- status ---------------------------------------------------
             status_val = str(raw.get("status", "approved")).strip().lower()
@@ -146,7 +156,7 @@ class GoldenSet:
 
             # -- top_k ----------------------------------------------------
             top_k = raw.get("top_k", 5)
-            if not isinstance(top_k, int) or top_k <= 0:
+            if type(top_k) is not int or top_k <= 0:
                 raise ValueError(
                     f"Question '{qid}' has invalid top_k={top_k!r}. "
                     f"Must be a positive integer."
@@ -213,24 +223,25 @@ class GoldenSet:
             FileNotFoundError: If *path* does not exist.
             yaml.YAMLError: If the file cannot be parsed as YAML.
         """
-        if not os.path.isfile(path):
-            raise FileNotFoundError(f"Golden-set file not found: {path}")
+        try:
+            with open(path, encoding="utf-8") as fh:
+                data = yaml.safe_load(fh)
+        except (yaml.YAMLError, UnicodeError):
+            raise ValueError(f"Invalid golden YAML in {path}; repair it or select a new path.") from None
+        return cls.from_dict(data)
 
-        with open(path, encoding="utf-8") as fh:
-            data = yaml.safe_load(fh)
-
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> GoldenSet:
+        """Validate a golden representation, including an empty authoring suite."""
         if not isinstance(data, dict):
-            raise ValueError(
-                f"Expected a YAML mapping at the top level of '{path}', "
-                f"got {type(data).__name__}."
-            )
+            raise ValueError("Golden set must be a mapping.")
 
         name = data.get("name", "")
         version = data.get("version", "")
 
-        if not name:
+        if not isinstance(name, str) or not name.strip():
             raise ValueError("Golden set is missing a non-empty 'name' field.")
-        if not version:
+        if not isinstance(version, str) or not version.strip():
             raise ValueError("Golden set is missing a non-empty 'version' field.")
 
         raw_questions = data.get("questions")
@@ -270,37 +281,10 @@ class GoldenSet:
             path: Destination filesystem path.  Parent directories are created
                 automatically if they do not exist.
         """
-        parent = os.path.dirname(path)
-        if parent:
-            os.makedirs(parent, exist_ok=True)
-
-        data = {
-            "name": self.name,
-            "version": self.version,
-            "questions": [
-                {
-                    "id": q.id,
-                    "question": q.question,
-                    "required_chunks": q.required_chunks,
-                    "match_mode": q.match_mode,
-                    "semantic_threshold": q.semantic_threshold,
-                    "top_k": q.top_k,
-                    "tags": q.tags,
-                    "status": q.status,
-                    "metadata": q.metadata,
-                }
-                for q in self.questions
-            ],
-        }
-
-        with open(path, "w", encoding="utf-8") as fh:
-            yaml.dump(
-                data,
-                fh,
-                default_flow_style=False,
-                sort_keys=False,
-                allow_unicode=True,
-            )
+        data = asdict(self)
+        self.from_dict(data)
+        content = yaml.safe_dump(data, default_flow_style=False, sort_keys=False, allow_unicode=True)
+        atomic_write_text(path, content, overwrite=True)
 
     # ------------------------------------------------------------------
     # Filtering & merging
