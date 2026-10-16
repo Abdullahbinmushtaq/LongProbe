@@ -22,7 +22,7 @@ from dataclasses import asdict
 from datetime import datetime
 from functools import wraps
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
 import typer
 from rich.console import Console
@@ -31,6 +31,7 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.prompt import Confirm, Prompt
 from rich.table import Table
 
+from longprobe._files import atomic_write_text, check_destination
 from longprobe.adapters import (
     ChromaAdapter,
     HttpAdapter,
@@ -194,10 +195,8 @@ def _load_golden_set(path: Path) -> GoldenSet | None:
 
     try:
         golden_set = GoldenSet.from_yaml(str(path))
-    except Exception as exc:
-        console.print(
-            f"[bold red]Error:[/bold red] Failed to parse golden set: {exc}",
-        )
+    except (OSError, ValueError):
+        console.print(f"Cannot load golden set {path}; repair the file or select a new path.", markup=False)
         return None
 
     return golden_set
@@ -609,7 +608,7 @@ def init(
             "Use --force to overwrite.",
         )
     else:
-        goldens_path.write_text(GOLDENS_TEMPLATE, encoding="utf-8")
+        atomic_write_text(goldens_path, GOLDENS_TEMPLATE, overwrite=force)
         console.print(f"[green]Created [bold]{goldens_path}[/bold][/green]")
 
     # Write longprobe.yaml
@@ -619,7 +618,7 @@ def init(
             "Use --force to overwrite.",
         )
     else:
-        config_path.write_text(CONFIG_TEMPLATE, encoding="utf-8")
+        atomic_write_text(config_path, CONFIG_TEMPLATE, overwrite=force)
         console.print(f"[green]Created [bold]{config_path}[/bold][/green]")
 
     console.print()
@@ -1200,6 +1199,10 @@ def capture(
         console.print("[bold red]Error:[/bold red] No questions provided. Use --question or --questions-file.")
         raise typer.Exit(1)
 
+    check_destination(goldens, overwrite=True)
+    if top_k <= 0 or match_mode not in {"id", "text", "semantic"}:
+        raise ConfigurationError("top_k must be positive; match_mode must be id, text, or semantic.")
+
     # 2. Load existing golden set or create empty
     if goldens.exists():
         golden_set = _load_golden_set(goldens)
@@ -1238,9 +1241,9 @@ def capture(
             # Auto mode: accept all chunks
             for r in results:
                 if match_mode == "id":
-                    approved_chunks.append(r.get("id", ""))
+                    approved_chunks.extend([r["id"]] if isinstance(r.get("id"), str) and r["id"].strip() else [])
                 else:
-                    approved_chunks.append(r.get("text", ""))
+                    approved_chunks.extend([r["text"]] if isinstance(r.get("text"), str) and r["text"].strip() else [])
         else:
             # Interactive mode
             skip_question = False
@@ -1389,8 +1392,12 @@ def generate(
         "--id-prefix",
         help="Prefix for auto-generated question IDs.",
     ),
+    overwrite: Annotated[bool, typer.Option("--overwrite", help="Replace an existing question-list --output file; not valid with --auto-capture.")] = False,
 ) -> None:
     """Generate golden questions from documents using an LLM."""
+    if (auto_capture and output is not None) or (overwrite and (output is None or auto_capture)):
+        raise ConfigurationError("Use --overwrite only with --output; --output and --auto-capture are separate modes.")
+
     # 1. Load config
     cfg = _load_config(config)
 
@@ -1422,8 +1429,23 @@ def generate(
     cfg.generator = gen_config
     cfg.validate_for("auto_capture" if auto_capture else "generate")
     gen_config = cfg.generator
+    if auto_capture and match_mode not in {"id", "text", "semantic"}:
+        raise ConfigurationError("match_mode must be id, text, or semantic.")
     if num_questions < 0 or top_k <= 0:
         raise ConfigurationError("num_questions must be nonnegative and top_k must be positive.")
+
+    golden_set = None
+    if auto_capture:
+        check_destination(goldens, overwrite=True)
+        try:
+            golden_set = GoldenSet.from_yaml(str(goldens))
+        except FileNotFoundError:
+            golden_set = GoldenSet(name="auto-generated", version="1.0", questions=[])
+    elif output is not None:
+        try:
+            check_destination(output, overwrite=overwrite)
+        except FileExistsError:
+            raise ConfigurationError("Output exists; use --overwrite to replace it or choose a new --output path.") from None
 
     # 3. Parse documents.
     with Progress(
@@ -1465,8 +1487,8 @@ def generate(
     except ImportError as exc:
         console.print(f"[bold red]Error:[/bold red] {exc}")
         raise typer.Exit(1)
-    except RuntimeError as exc:
-        console.print(f"[bold red]LLM Error:[/bold red] {exc}")
+    except RuntimeError:
+        console.print("LLM generation failed; check provider credentials, model, and connection.")
         raise typer.Exit(1)
 
     if not questions:
@@ -1496,26 +1518,8 @@ def generate(
             )
             raise typer.Exit(1)
 
-        # 5b. Load existing golden set or create empty.
-        if goldens.exists():
-            try:
-                golden_set = GoldenSet.from_yaml(str(goldens))
-                console.print(f"[dim]Loaded existing golden set '{goldens}'[/dim]")
-            except Exception:
-                golden_set = GoldenSet(
-                    name="auto-generated",
-                    version="1.0",
-                    questions=[],
-                )
-                console.print(
-                    f"[dim]Could not parse existing '{goldens}', creating new golden set.[/dim]"
-                )
-        else:
-            golden_set = GoldenSet(
-                name="auto-generated",
-                version="1.0",
-                questions=[],
-            )
+        # The destination has already passed preflight before generation.
+        assert golden_set is not None
 
         existing_ids = {q.id for q in golden_set.questions}
         new_questions: list[GoldenQuestion] = []
@@ -1535,8 +1539,8 @@ def generate(
                 start = time.perf_counter()
                 results = adapter.retrieve(q_text, top_k=top_k)
                 elapsed = (time.perf_counter() - start) * 1000
-            except Exception as exc:
-                console.print(f"    [yellow]Retriever error: {exc}. Skipping.[/yellow]")
+            except Exception:
+                console.print("    Retriever request failed; check connection and credentials. Skipping.")
                 skipped += 1
                 continue
 
@@ -1553,9 +1557,9 @@ def generate(
             approved_chunks: list[str] = []
             for r in results:
                 if match_mode == "id":
-                    approved_chunks.append(r.get("id", ""))
+                    approved_chunks.extend([r["id"]] if isinstance(r.get("id"), str) and r["id"].strip() else [])
                 else:
-                    approved_chunks.append(r.get("text", ""))
+                    approved_chunks.extend([r["text"]] if isinstance(r.get("text"), str) and r["text"].strip() else [])
 
             if not approved_chunks:
                 skipped += 1
@@ -1587,6 +1591,9 @@ def generate(
                 raise typer.Exit(1)
 
         captured_count = len(new_questions)
+        if not captured_count:
+            console.print(f"No valid new questions captured; existing goldens were unchanged. Skipped: {skipped}")
+            return
         console.print(
             Panel(
                 f"Generated:   [bold cyan]{len(questions)}[/bold cyan] questions\n"
@@ -1612,16 +1619,13 @@ def generate(
                 "model": gen_config.model,
             },
         }
-        output.parent.mkdir(parents=True, exist_ok=True)
-        output.write_text(
-            _yaml.dump(data, default_flow_style=False, sort_keys=False, allow_unicode=True),
-            encoding="utf-8",
-        )
+        content = _yaml.safe_dump(data, default_flow_style=False, sort_keys=False, allow_unicode=True)
+        atomic_write_text(output, content, overwrite=overwrite)
         console.print(
             Panel(
                 f"Generated [bold cyan]{len(questions)}[/bold cyan] questions.\n"
                 f"Saved to [bold]{output}[/bold]\n\n"
-                f"[dim]💡 Hint: Run [cyan]longprobe edit[/cyan] to review & approve questions.[/dim]",
+                f"[dim]This is a question list, not an evaluable golden set; capture and verify expected evidence next.[/dim]",
                 title="Generation Complete",
                 border_style="green",
             )
