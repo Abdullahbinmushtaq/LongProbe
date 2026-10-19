@@ -42,7 +42,9 @@ sequenceDiagram
 
 ---
 
-## Interactive TUI Output
+## Historical demonstration output
+
+The recording below illustrates an older run, not acceptance evidence for v0.2.0. Current baseline promotion requires every evaluated approved question to pass by default. An unchanged average alone does not establish passing quality or deployment readiness. See the [current release behavior](../releases/v0.2.0.md).
 
 When executed, LongProbe displays the baseline creation and comparison progress:
 
@@ -71,35 +73,25 @@ When executed, LongProbe displays the baseline creation and comparison progress:
 
 ```python
 from longprobe import LongProbe
-from longprobe.core.baseline import BaselineStore
 
-# 1. Initialize LongProbe
-probe = LongProbe(adapter=adapter, goldens_path="goldens.yaml")
+# adapter is your application-owned retriever adapter.
+probe = LongProbe(
+    adapter=adapter,
+    goldens_path="goldens.yaml",
+    config_path="longprobe.yaml",
+)
 
-# 2. Run initial check & save production baseline
+# After reviewing the golden evidence, evaluate and explicitly promote.
 initial_report = probe.run()
 probe.save_baseline(label="production-v1")
 
-# --- Developer updates RAG pipeline or re-indexes documents ---
-
-# 3. Run check on updated pipeline
-new_report = probe.run()
-
-# 4. Compare current run against baseline
-baseline_store = BaselineStore(db_path=".longprobe/baselines.db")
-baseline_report = baseline_store.load("production-v1")
-
-diff = baseline_store.diff(new_report, baseline_report)
-
-# 5. Check for regressions
-if diff.get("regressions"):
-    print("⚠️ REGRESSIONS DETECTED!")
-    for reg in diff["regressions"]:
-        print(f"Question: {reg['question_id']}")
-        print(f"Recall Drop: {reg['baseline_recall']:.1%} -> {reg['current_recall']:.1%}")
-        print(f"Lost Chunks: {reg['lost_chunks']}")
+# After a pipeline update, require the selected reference.
+new_report = probe.run(baseline_label="production-v1")
+if new_report.quality["passed"]:
+    print("Retrieval quality checks passed for this golden suite.")
 else:
-    print("✅ No regressions detected - safe to deploy!")
+    print(new_report.quality["reasons"])
+    print(new_report.comparison)
 ```
 
 ---
@@ -116,5 +108,5 @@ uv run longprobe baseline save --label production-v1
 uv run longprobe baseline list
 
 # Compare current pipeline against saved baseline
-uv run longprobe baseline diff production-v1
+uv run longprobe diff --baseline production-v1
 ```
