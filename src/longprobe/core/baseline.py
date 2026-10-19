@@ -19,9 +19,9 @@ import json
 import os
 import sqlite3
 from contextlib import closing
-from dataclasses import asdict
 from datetime import UTC, datetime
 
+from .reporting import report_from_dict, report_to_dict
 from .scorer import ProbeReport, QuestionResult
 
 # ---------------------------------------------------------------------------
@@ -29,58 +29,7 @@ from .scorer import ProbeReport, QuestionResult
 # ---------------------------------------------------------------------------
 
 
-def _dict_to_question_result(data: dict) -> QuestionResult:
-    """Reconstruct a :class:`QuestionResult` from a plain dictionary.
-
-    Handles the deserialisation of every field declared on the dataclass,
-    including list-of-strings fields that arrive as native JSON lists.
-
-    Args:
-        data: Dictionary with keys matching the dataclass fields.
-
-    Returns:
-        A fully populated :class:`QuestionResult` instance.
-    """
-    return QuestionResult(
-        question_id=data["question_id"],
-        question=data["question"],
-        recall_score=float(data["recall_score"]),
-        retrieved_chunk_ids=list(data["retrieved_chunk_ids"]),
-        required_chunks=list(data["required_chunks"]),
-        missing_chunks=list(data["missing_chunks"]),
-        found_chunks=list(data["found_chunks"]),
-        passed=bool(data["passed"]),
-        latency_ms=float(data["latency_ms"]),
-    )
-
-
-def _dict_to_report(data: dict) -> ProbeReport:
-    """Reconstruct a :class:`ProbeReport` from a plain dictionary.
-
-    Nested :class:`QuestionResult` objects inside the ``results`` list are
-    rebuilt via :func:`_dict_to_question_result`.
-
-    Args:
-        data: Dictionary with keys matching the :class:`ProbeReport` fields.
-
-    Returns:
-        A fully populated :class:`ProbeReport` instance.
-    """
-    results = [
-        _dict_to_question_result(r) for r in data.get("results", [])
-    ]
-
-    return ProbeReport(
-        golden_set_name=data["golden_set_name"],
-        golden_set_version=data["golden_set_version"],
-        timestamp=data["timestamp"],
-        overall_recall=float(data["overall_recall"]),
-        pass_rate=float(data["pass_rate"]),
-        results=results,
-        baseline_recall=float(data["baseline_recall"]) if data.get("baseline_recall") is not None else None,
-        recall_delta=float(data["recall_delta"]) if data.get("recall_delta") is not None else None,
-        regression_detected=bool(data.get("regression_detected", False)),
-    )
+_dict_to_report = report_from_dict
 
 
 # ---------------------------------------------------------------------------
@@ -166,7 +115,7 @@ class BaselineStore:
             report: The probe report to store.
             label: Unique identifier for the baseline snapshot.
         """
-        report_json = json.dumps(asdict(report), ensure_ascii=False)
+        report_json = json.dumps(report_to_dict(report), ensure_ascii=False, allow_nan=False)
         timestamp = (
             datetime.now(UTC).isoformat()
             if not report.timestamp

@@ -25,7 +25,7 @@ import math
 import time
 from collections import Counter
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 from .golden import GoldenQuestion, GoldenSet
@@ -60,6 +60,7 @@ class QuestionResult:
     found_chunks: list[str]
     passed: bool
     latency_ms: float
+    contract: dict | None = None
 
 
 @dataclass
@@ -89,6 +90,12 @@ class ProbeReport:
     baseline_recall: float | None = None
     recall_delta: float | None = None
     regression_detected: bool = False
+    schema_version: int | None = None
+    selection: dict = field(default_factory=dict)
+    policy: dict = field(default_factory=dict)
+    baseline_identity: dict = field(default_factory=lambda: {"status": "not_requested"})
+    comparison: dict | None = None
+    quality: dict = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -195,6 +202,8 @@ class RecallScorer:
         Returns:
             A :class:`ProbeReport` summarising the evaluation run.
         """
+        from .reporting import question_contract
+
         if not golden_set.questions:
             raise EmptyEvaluationError("No questions to evaluate; add or approve golden questions.")
         if top_k_override is not None and (type(top_k_override) is not int or top_k_override <= 0):
@@ -209,6 +218,7 @@ class RecallScorer:
             elapsed = time.perf_counter() - start
 
             result = self.score(question, retrieved_docs)
+            result.contract = question_contract(question, top_k, self.recall_threshold)
             result.latency_ms = elapsed * 1000.0
             results.append(result)
 
@@ -223,6 +233,8 @@ class RecallScorer:
             overall_recall=overall_recall,
             pass_rate=pass_rate,
             results=results,
+            schema_version=2,
+            policy={"mode": "all_questions", "recall_threshold": self.recall_threshold},
         )
 
     # ------------------------------------------------------------------
