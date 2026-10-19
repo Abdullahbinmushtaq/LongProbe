@@ -15,12 +15,12 @@ Usage:
 
 from __future__ import annotations
 
-import json
 import sys
 import time
 from dataclasses import asdict
 from datetime import datetime
 from functools import wraps
+from inspect import signature
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -33,15 +33,23 @@ from rich.table import Table
 
 from longprobe._files import atomic_write_text, check_destination
 from longprobe.adapters import create_adapter_from_config
+from longprobe.cli.output import (
+    github_annotations,
+    report_exit_code,
+    report_payload,
+    validate_output,
+    write_json,
+)
 from longprobe.config import ConfigurationError, GeneratorConfig, ProbeConfig
 from longprobe.core.baseline import BaselineStore
 from longprobe.core.diff import DiffReporter
 from longprobe.core.docparser import DocumentParser
-from longprobe.core.evaluation import evaluate, select_questions
+from longprobe.core.evaluation import BaselineNotFoundError, evaluate, select_questions
 from longprobe.core.explain import explain_failure
 from longprobe.core.generator import QuestionGenerator
 from longprobe.core.golden import GoldenQuestion, GoldenSet, generate_question_id
-from longprobe.core.policy import BaselineQualityError, require_baseline_quality
+from longprobe.core.policy import BaselineQualityError, assess_baseline
+from longprobe.core.reporting import ReportError, read_report
 from longprobe.core.scorer import EmptyEvaluationError, ProbeReport
 
 # ---------------------------------------------------------------------------
@@ -206,26 +214,31 @@ def _load_config(path: Path) -> ProbeConfig:
 
 
 def _command_errors(fn):
-    """Present expected input failures without leaking YAML/request contents."""
+    """Return one safe error object for parsed JSON-mode invocations."""
     @wraps(fn)
     def wrapped(*args, **kwargs):
+        output = signature(fn).bind_partial(*args, **kwargs).arguments.get("output", "table")
         try:
             return fn(*args, **kwargs)
-        except BaselineQualityError as exc:
-            console.print(str(exc), markup=False)
-            raise typer.Exit(1) from None
-        except EmptyEvaluationError as exc:
-            console.print(str(exc), markup=False)
-            raise typer.Exit(1) from None
-        except ConfigurationError as exc:
-            console.print(f"Configuration error: {exc}", markup=False)
-            raise typer.Exit(1) from None
-        except OSError as exc:
-            console.print(f"File operation failed for {exc.filename or 'selected destination'}; check the path and permissions. Run longprobe init if configuration is missing.", markup=False)
-            raise typer.Exit(1) from None
-        except ValueError:
-            console.print("Invalid input; check golden questions and command options. Existing files were not replaced.")
-            raise typer.Exit(1) from None
+        except (typer.Exit, SystemExit):
+            raise
+        except Exception as exc:
+            if isinstance(exc, BaselineQualityError):
+                code, kind, message = 1, "quality_failure", str(exc)
+            elif isinstance(exc, (ConfigurationError, EmptyEvaluationError, BaselineNotFoundError, ReportError)):
+                code, kind, message = 2, "invalid_input", str(exc)
+            elif isinstance(exc, FileNotFoundError):
+                code, kind, message = 2, "missing_input", "Selected input was not found; check paths or run longprobe init."
+            elif isinstance(exc, ValueError):
+                code, kind, message = 2, "invalid_input", "Invalid input; check golden questions and command options."
+            elif isinstance(exc, ImportError):
+                code, kind, message = 2, "missing_dependency", "Required optional dependency is missing; install the selected adapter extra."
+            else:
+                code, kind, message = 3, "execution_error", "Operation failed; check file permissions and retrieval availability."
+            if output == "json":
+                write_json({"schema_version": 2, "status": "error", "error": {"code": kind, "message": message}})
+            diagnostics.print(message, markup=False)
+            raise typer.Exit(code) from None
     return wrapped
 
 
@@ -248,89 +261,12 @@ def _display_results(
         _display_table(report, diff_result)
 
 
-def _display_json(
-    report: ProbeReport,
-    diff_result: dict[str, Any] | None = None,
-) -> None:
-    """Dump the report (and optional diff) as pretty-printed JSON."""
-    payload: dict[str, Any] = {
-        "golden_set": report.golden_set_name,
-        "golden_set_version": report.golden_set_version,
-        "timestamp": report.timestamp,
-        "overall_recall": report.overall_recall,
-        "pass_rate": report.pass_rate,
-        "total_questions": len(report.results),
-        "passed_questions": sum(1 for r in report.results if r.passed),
-        "failed_questions": sum(1 for r in report.results if not r.passed),
-        "regression_detected": report.regression_detected,
-        "results": [
-            {
-                "question_id": r.question_id,
-                "question": r.question,
-                "recall_score": r.recall_score,
-                "required_chunks": r.required_chunks,
-                "found_chunks": r.found_chunks,
-                "missing_chunks": r.missing_chunks,
-                "passed": r.passed,
-                "latency_ms": r.latency_ms,
-            }
-            for r in report.results
-        ],
-    }
-    if report.baseline_recall is not None:
-        payload["baseline_recall"] = report.baseline_recall
-        payload["recall_delta"] = report.recall_delta
-    if diff_result is not None:
-        payload["diff"] = diff_result
-
-    console.print_json(json.dumps(payload, indent=2))
+def _display_json(report: ProbeReport, diff_result: dict[str, Any] | None = None) -> None:
+    write_json(report_payload(report))
 
 
-def _display_github(
-    report: ProbeReport,
-    diff_result: dict[str, Any] | None = None,
-) -> None:
-    """Print GitHub Actions workflow-command annotations."""
-    for r in report.results:
-        if r.passed:
-            msg = (
-                f"recall={r.recall_score:.0%} "
-                f"({len(r.found_chunks)}/{len(r.required_chunks)} expected chunks found)"
-            )
-            console.print(f"::notice file=longprobe,title=Retrieval OK::[{r.question_id}] {msg}")
-        else:
-            missing_summary = ", ".join(r.missing_chunks) if r.missing_chunks else "\u2014"
-            msg = (
-                f"recall={r.recall_score:.0%} "
-                f"({len(r.found_chunks)}/{len(r.required_chunks)}) "
-                f"\u2014 missing: {missing_summary}"
-            )
-            console.print(f"::error file=longprobe,title=Retrieval Fail::[{r.question_id}] {msg}")
-
-    if diff_result and diff_result.get("regressions"):
-        for reg in diff_result["regressions"]:
-            console.print(
-                f"::error file=longprobe,title=Retrieval Regression::"
-                f"Question {reg['question_id']}: recall dropped from "
-                f"{reg['baseline_recall']:.2f} to {reg['current_recall']:.2f}. "
-                f"Lost chunks: {reg['newly_lost_chunks']}"
-            )
-
-    if diff_result and diff_result.get("improvements"):
-        for imp in diff_result["improvements"]:
-            console.print(
-                f"::notice file=longprobe,title=Retrieval Improvement::"
-                f"Question {imp['question_id']}: recall improved from "
-                f"{imp['baseline_recall']:.2f} to {imp['current_recall']:.2f}."
-            )
-
-    console.print(
-        f"::group::Summary\n"
-        f"Overall recall: {report.overall_recall:.2f}\n"
-        f"Pass rate: {report.pass_rate:.2f} "
-        f"({sum(1 for r in report.results if r.passed)}/{len(report.results)})\n"
-        f"::endgroup::",
-    )
+def _display_github(report: ProbeReport, diff_result: dict[str, Any] | None = None) -> None:
+    sys.stdout.write(github_annotations(report) + "\n")
 
 
 def _display_table(
@@ -419,6 +355,19 @@ def _display_table(
             f"[bold]vs Baseline:[/bold]       [{delta_style}]{delta_str}[/{delta_style}]"
         )
 
+    identity = report.baseline_identity
+    summary_lines.append(f"Baseline: {identity.get('resolved_label') or identity.get('requested_label') or 'none'}; comparison: {identity.get('status', 'not_requested')}")
+    if identity.get("timestamp"):
+        summary_lines.append(f"Baseline timestamp: {identity['timestamp']}")
+    if diff_result:
+        if not diff_result.get("compatible", False):
+            summary_lines.append("Incompatible: " + "; ".join(diff_result.get("compatibility_reasons", [])))
+        for label, key in (("Added questions", "added_questions"), ("Removed questions", "removed_questions")):
+            if diff_result.get(key):
+                summary_lines.append(label + ": " + ", ".join(diff_result[key]))
+        for change in diff_result.get("changed_questions", []):
+            summary_lines.append(f"Changed {change['question_id']}: {', '.join(change['fields'])}")
+
     border_style = "green" if report.pass_rate >= 1.0 else "red"
     console.print(
         Panel(
@@ -441,9 +390,7 @@ def _run_probe(
     compare: bool = True,
 ) -> tuple[ProbeConfig, Any, ProbeReport]:
     """Adapt CLI input to the shared evaluation module."""
-    golden_set = _load_golden_set(goldens_path)
-    if golden_set is None:
-        raise ValueError("Cannot load golden questions.")
+    golden_set = GoldenSet.from_yaml(str(goldens_path))
     select_questions(golden_set, ProbeConfig.defaults(), tags=tags, include_drafts=include_drafts)
     if not include_drafts:
         drafts = sum(q.status == "draft" for q in golden_set.questions)
@@ -575,32 +522,19 @@ def check(
         "--include-drafts",
         help="Include draft questions in the evaluation run.",
     ),
+    baseline_label: Annotated[str | None, typer.Option("--baseline", "-b", help="Explicit baseline label; must exist.")] = None,
 ) -> None:
     """Run probes against the golden set and report retrieval quality."""
+    validate_output(output)
     cfg, _adapter, report = _run_probe(
-        goldens_path=goldens,
-        config_path=config,
-        top_k_override=top_k,
-        threshold_override=threshold,
-        tags=tag,
-        include_drafts=include_drafts,
+        goldens_path=goldens, config_path=config, top_k_override=top_k,
+        threshold_override=threshold, tags=tag, include_drafts=include_drafts,
+        baseline_label=baseline_label,
     )
-
-    # Build diff_result for display if regression was detected
-    diff_result = None
-    if report.regression_detected and cfg.baseline.auto_compare:
-        store = BaselineStore(db_path=cfg.baseline.db_path)
-        baseline = store.load("latest")
-        if baseline is not None:
-            diff_result = store.diff(report, baseline)
-
-    _display_results(report, output, diff_result)
-
-    # Determine exit code
-    fail_on_regression = cfg.scoring.fail_on_regression
-    regression_detected = report.regression_detected
-    if fail_on_regression and (report.pass_rate < 1.0 or regression_detected):
-        sys.exit(1)
+    _display_results(report, output, report.comparison)
+    code = report_exit_code(report, blocking=cfg.scoring.fail_on_regression)
+    if code:
+        sys.exit(code)
 
 
 # ---------------------------------------------------------------------------
@@ -646,34 +580,27 @@ def baseline_save(
         "--tag",
         help="Only run questions that have this tag (can be specified multiple times).",
     ),
+    output: Annotated[str, typer.Option("--output", "-o", help="Output format: table, json, github.")] = "table",
 ) -> None:
     """Run probes strictly on approved questions and persist the report as a named baseline snapshot."""
+    validate_output(output)
+    if not label.strip():
+        raise ConfigurationError("Baseline label must be nonempty.")
     cfg, _adapter, report = _run_probe(
-        goldens_path=goldens,
-        config_path=config,
-        top_k_override=top_k,
-        threshold_override=threshold,
-        tags=tag,
-        include_drafts=False,
-        compare=False,
+        goldens_path=goldens, config_path=config, top_k_override=top_k,
+        threshold_override=threshold, tags=tag, include_drafts=False, compare=False,
     )
-
-    require_baseline_quality(report)
-
-    store = BaselineStore(db_path=cfg.baseline.db_path)
-    store.save(report=report, label=label)
-
-    console.print(
-        Panel(
-            f"Baseline [bold cyan]{label}[/bold cyan] saved successfully.\n"
-            f"  Questions: {len(report.results)} (approved)\n"
-            f"  Overall recall: {report.overall_recall:.2f}\n"
-            f"  Pass rate: {report.pass_rate:.2f}\n"
-            f"  Location: {cfg.baseline.db_path}",
-            title="Baseline Saved",
-            border_style="green",
-        ),
-    )
+    decision = assess_baseline(report)
+    report.quality = asdict(decision)
+    if decision.passed:
+        BaselineStore(cfg.baseline.db_path).save(report, label)
+        report.quality["saved_label"] = label
+        diagnostics.print(f"Baseline '{label}' saved explicitly.", markup=False)
+    else:
+        diagnostics.print("Baseline was NOT saved: " + "; ".join(decision.reasons), markup=False)
+    _display_results(report, output)
+    if not decision.passed:
+        raise typer.Exit(1)
 
 
 @baseline_app.command("list")
@@ -821,90 +748,54 @@ def diff(
     ),
 ) -> None:
     """Compare probe results against a saved baseline, or compare two historical snapshots."""
+    validate_output(output)
     cfg = _load_config(config)
     cfg.validate_for("baseline")
+    if threshold is not None:
+        cfg.scoring.recall_threshold = threshold
+        cfg.validate_for("baseline")
     store = BaselineStore(db_path=cfg.baseline.db_path)
-
-    # Mode 1: Compare two historical baselines: longprobe diff baseline_a baseline_b
     if baseline_a is not None and baseline_b is not None:
-        if include_drafts:
-            console.print("[dim]Note: --include-drafts applies to live probe runs only.[/dim]\n")
-
-        b1 = store.load(baseline_a)
-        if b1 is None:
-            console.print(f"[bold red]Error:[/bold red] Baseline '{baseline_a}' not found.")
-            raise typer.Exit(1)
-
-        b2 = store.load(baseline_b)
-        if b2 is None:
-            console.print(f"[bold red]Error:[/bold red] Baseline '{baseline_b}' not found.")
-            raise typer.Exit(1)
-
-        diff_reporter = DiffReporter()
-        diff_result = diff_reporter.diff(current=b2, baseline=b1)
-        diff_dict = asdict(diff_result)
-
-        _display_results(b2, output, diff_dict)
-
-        if threshold is not None and b2.overall_recall < threshold:
-            console.print(
-                f"\n[bold red]Quality Gate Failure:[/bold red] Target baseline '{baseline_b}' recall "
-                f"({b2.overall_recall:.2f}) is below threshold ({threshold:.2f}).",
-            )
-            sys.exit(1)
-
-        if diff_result.regressions:
-            console.print(
-                f"\n[bold red]{len(diff_result.regressions)} regression(s) detected between "
-                f"'{baseline_a}' and '{baseline_b}'.[/bold red]",
-            )
-            sys.exit(1)
-        else:
-            console.print(
-                f"\n[bold green]No regressions detected between "
-                f"'{baseline_a}' and '{baseline_b}'.[/bold green]",
-            )
-        return
-
-    # Mode 2: Live run diff against baseline
-    target_baseline_label = baseline_a if baseline_a is not None else baseline_label
-
-    cfg, _adapter, report = _run_probe(
-        goldens_path=goldens,
-        config_path=config,
-        top_k_override=top_k,
-        threshold_override=threshold,
-        tags=tag,
-        include_drafts=include_drafts,
-    )
-
-    baseline = store.load(target_baseline_label)
-    if baseline is None:
-        console.print(
-            f"[bold red]Error:[/bold red] Baseline '{target_baseline_label}' not found.\n"
-            f"Run [cyan]longprobe baseline save --label {target_baseline_label}[/cyan] "
-            "to create it.",
-        )
-        raise typer.Exit(1)
-
-    diff_reporter = DiffReporter()
-    diff_result = diff_reporter.diff(current=report, baseline=baseline)
-    diff_dict = asdict(diff_result)
-
-    _display_results(report, output, diff_dict)
-
-    # Exit with error code if regressions found
-    if diff_result.regressions:
-        console.print(
-            f"\n[bold red]{len(diff_result.regressions)} regression(s) detected against "
-            f"baseline '{target_baseline_label}'.[/bold red]",
-        )
-        sys.exit(1)
+        b1, b2 = store.load(baseline_a), store.load(baseline_b)
+        if b1 is None or b2 is None:
+            raise BaselineNotFoundError("Requested baseline was not found; check explicit labels.")
+        comparison = DiffReporter().diff(b2, b1)
+        report = b2
+        report.comparison = asdict(comparison)
+        report.baseline_identity = {"status": "compared" if comparison.compatible else "incompatible", "requested_label": baseline_a, "resolved_label": baseline_a, "timestamp": b1.timestamp}
+        report.baseline_recall = b1.overall_recall
+        report.recall_delta = comparison.overall_delta
+        report.regression_detected = bool(comparison.regressions)
+        failed = [r.question_id for r in report.results if not r.passed]
+        reasons = []
+        if failed:
+            reasons.append("One or more target questions failed their recorded thresholds.")
+        if comparison.regressions:
+            reasons.append("Required evidence regressed.")
+        if not comparison.compatible:
+            reasons.append("Baseline comparison is incompatible or unverified.")
+        if threshold is not None and report.overall_recall < threshold:
+            reasons.append("Target overall recall is below the explicit threshold.")
+        report.quality = {"passed": not reasons, "mode": "evaluation", "failed_questions": failed, "reasons": reasons}
     else:
-        console.print(
-            f"\n[bold green]No regressions detected against "
-            f"baseline '{target_baseline_label}'.[/bold green]",
-        )
+        target = baseline_a if baseline_a is not None else baseline_label
+        _, _, report = _run_probe(goldens, config, top_k, threshold, tag, include_drafts, baseline_label=target)
+    _display_results(report, output, report.comparison)
+    code = report_exit_code(report)
+    if code:
+        sys.exit(code)
+
+
+@app.command("report")
+@_command_errors
+def render_report(
+    report_path: Annotated[Path, typer.Argument(help="Saved LongProbe JSON report.")],
+    output: Annotated[str, typer.Option("--output", "-o")] = "table",
+) -> None:
+    """Render a saved report without loading configuration or running retrieval."""
+    validate_output(output)
+    report = read_report(report_path)
+    _display_results(report, output, report.comparison)
 
 
 # ---------------------------------------------------------------------------
@@ -979,21 +870,13 @@ def watch(
                 )
 
                 try:
-                    cfg, _adapter, report = _run_probe(
+                    _cfg, _adapter, report = _run_probe(
                         goldens_path=goldens_path,
                         config_path=config_path,
                         tags=tag,
                     )
 
-                    diff_result = None
-                    if report.regression_detected:
-                        store = BaselineStore(db_path=cfg.baseline.db_path)
-                        baseline = store.load("latest")
-                        if baseline is not None:
-                            diff_reporter = DiffReporter()
-                            diff_obj = diff_reporter.diff(current=report, baseline=baseline)
-                            diff_result = asdict(diff_obj)
-
+                    diff_result = report.comparison
                     _display_results(report, "table", diff_result)
                 except typer.Exit:
                     # Errors already printed by _run_probe

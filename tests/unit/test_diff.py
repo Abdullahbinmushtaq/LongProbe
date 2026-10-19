@@ -597,7 +597,7 @@ class TestMixedScenario:
 
 class TestTwoBaselineDiffCLI:
 
-    def test_two_baseline_diff_with_threshold_failure(self, tmp_path, monkeypatch):
+    def test_legacy_two_baseline_diff_is_noncomparable(self, tmp_path, monkeypatch):
         import yaml
         from longprobe.cli.main import diff as cli_diff
         from longprobe.core.baseline import BaselineStore
@@ -628,4 +628,4 @@ class TestTwoBaselineDiffCLI:
                 include_drafts=False,
             )
 
-        assert exc.value.code == 1
+        assert exc.value.code == 2

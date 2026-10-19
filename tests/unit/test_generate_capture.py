@@ -417,7 +417,7 @@ class TestAutoCapture:
             catch_exceptions=False,
         )
 
-        assert result.exit_code == 1
+        assert result.exit_code == 2
         assert "retriever" in result.output.lower() or "Error" in result.output
 
     @patch("longprobe.cli.main._create_adapter_from_config")

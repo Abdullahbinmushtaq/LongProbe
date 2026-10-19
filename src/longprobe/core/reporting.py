@@ -119,6 +119,20 @@ def report_from_dict(data: dict) -> ProbeReport:
         report.comparison = data.get("comparison", data.get("diff"))
         if report.comparison is not None and not isinstance(report.comparison, dict):
             raise ReportError("Report comparison must be an object.")
+        if report.quality:
+            if type(report.quality.get("passed")) is not bool or report.quality.get("mode") not in {"evaluation", "all_questions", "aggregate"}:
+                raise ReportError("Report quality decision is invalid.")
+            _strings(report.quality.get("failed_questions"), "quality.failed_questions")
+            _strings(report.quality.get("reasons"), "quality.reasons")
+        if report.comparison is not None:
+            comparison = report.comparison
+            if type(comparison.get("compatible")) is not bool:
+                raise ReportError("Report comparison compatibility is invalid.")
+            for key in ("compatibility_reasons", "added_questions", "removed_questions", "unchanged"):
+                _strings(comparison.get(key), f"comparison.{key}")
+            for key in ("regressions", "improvements", "changed_questions", "evidence_changes"):
+                if not isinstance(comparison.get(key), list) or any(not isinstance(item, dict) for item in comparison[key]):
+                    raise ReportError("Report comparison changes must be lists of objects.")
         if type(report.regression_detected) is not bool:
             raise ReportError("Report regression flag must be a boolean.")
         if report.recall_delta is not None:

@@ -22,6 +22,10 @@ class BaselineNotFoundError(ValueError):
     """An explicitly requested reference does not exist."""
 
 
+class EvaluationExecutionError(RuntimeError):
+    """Retrieval failed operationally, rather than producing a quality miss."""
+
+
 def select_questions(golden_set: GoldenSet, config: ProbeConfig, *, tags: list[str] | None = None, include_drafts: bool = False) -> GoldenSet:
     suite = GoldenSet.from_dict(asdict(golden_set))
     unknown = set(config.scoring.question_thresholds) - {q.id for q in suite.questions}
@@ -69,7 +73,15 @@ def evaluate(
             identity.update(status="compared", resolved_label=label, timestamp=baseline.timestamp)
     selected_ids = {q.id for q in suite.questions}
     scorer = RecallScorer(settings.scoring.recall_threshold, {k: v for k, v in settings.scoring.question_thresholds.items() if k in selected_ids})
-    report = scorer.score_all(suite, retrieve, top_k_override)
+    def retrieve_checked(query, top_k):
+        try:
+            return retrieve(query, top_k)
+        except ImportError:
+            raise
+        except Exception:
+            raise EvaluationExecutionError("Retrieval failed; check the configured endpoint and service diagnostics.") from None
+
+    report = scorer.score_all(suite, retrieve_checked, top_k_override)
     report.policy = {"mode": settings.baseline.quality_gate, "recall_threshold": settings.scoring.recall_threshold}
     report.selection = {"tags": sorted(set(tags or [])), "include_drafts": include_drafts, "evaluated_question_ids": sorted(selected_ids)}
     report.baseline_identity = identity

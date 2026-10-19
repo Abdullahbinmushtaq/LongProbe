@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import pytest
 import yaml
 
 from longprobe.cli.main import check, diff
@@ -120,17 +121,19 @@ def test_diff_live_run_supports_include_drafts(tmp_path: Path, monkeypatch):
     mock_adapter.retrieve.side_effect = mock_retrieve
     monkeypatch.setattr("longprobe.cli.main._create_adapter_from_config", lambda cfg: mock_adapter)
 
-    diff(
-        baseline_a=None,
-        baseline_b=None,
-        baseline_label="latest",
-        goldens=goldens_path,
-        config=config_path,
-        output="table",
-        top_k=None,
-        threshold=None,
-        tag=[],
-        include_drafts=True,
-    )
+    with pytest.raises(SystemExit) as exc:
+        diff(
+            baseline_a=None,
+            baseline_b=None,
+            baseline_label="latest",
+            goldens=goldens_path,
+            config=config_path,
+            output="table",
+            top_k=None,
+            threshold=None,
+            tag=[],
+            include_drafts=True,
+        )
+    assert exc.value.code == 2  # Legacy reference and added draft are incompatible.
 
     assert len(calls) == 2
