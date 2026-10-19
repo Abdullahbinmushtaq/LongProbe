@@ -19,10 +19,11 @@ import json
 import os
 import sqlite3
 from contextlib import closing
+from dataclasses import asdict
 from datetime import UTC, datetime
 
 from .reporting import report_from_dict, report_to_dict
-from .scorer import ProbeReport, QuestionResult
+from .scorer import ProbeReport
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -269,62 +270,6 @@ class BaselineStore:
             * ``unchanged`` – list of question IDs whose recall did not
               change.
         """
-        # Build a lookup from the baseline results keyed by question_id.
-        baseline_by_id: dict[str, QuestionResult] = {
-            r.question_id: r for r in baseline.results
-        }
+        from .diff import DiffReporter
 
-        regressions: list[dict] = []
-        improvements: list[dict] = []
-        unchanged: list[str] = []
-
-        for cur_result in current.results:
-            base_result = baseline_by_id.get(cur_result.question_id)
-
-            # New question not present in baseline – skip classification.
-            if base_result is None:
-                continue
-
-            cur_recall = cur_result.recall_score
-            base_recall = base_result.recall_score
-
-            if cur_recall < base_recall:
-                # Regression: recall went down.
-                current_found = set(cur_result.found_chunks)
-                newly_lost = sorted(
-                    c for c in base_result.found_chunks if c not in current_found
-                )
-                regressions.append(
-                    {
-                        "question_id": cur_result.question_id,
-                        "question": cur_result.question,
-                        "newly_lost_chunks": newly_lost,
-                        "baseline_recall": base_recall,
-                        "current_recall": cur_recall,
-                    }
-                )
-            elif cur_recall > base_recall:
-                # Improvement: recall went up.
-                newly_found = sorted(
-                    c for c in cur_result.found_chunks
-                    if c not in set(base_result.found_chunks)
-                )
-                improvements.append(
-                    {
-                        "question_id": cur_result.question_id,
-                        "question": cur_result.question,
-                        "newly_found_chunks": newly_found,
-                        "baseline_recall": base_recall,
-                        "current_recall": cur_recall,
-                    }
-                )
-            else:
-                # Unchanged.
-                unchanged.append(cur_result.question_id)
-
-        return {
-            "overall_delta": current.overall_recall - baseline.overall_recall,
-            "regressions": regressions,
-            "improvements": improvements,
-            "unchanged": unchanged,
-        }
+        return asdict(DiffReporter().diff(current, baseline))

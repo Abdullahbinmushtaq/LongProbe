@@ -308,7 +308,7 @@ class TestOverallDelta:
 
         diff = reporter.diff(current, baseline)
 
-        assert diff.overall_delta == pytest.approx(0.5)
+        assert diff.overall_delta is None  # Legacy reports cannot establish a comparable delta.
 
     def test_negative_delta_for_regression(self):
         reporter = DiffReporter()
@@ -328,7 +328,7 @@ class TestOverallDelta:
 
         diff = reporter.diff(current, baseline)
 
-        assert diff.overall_delta == pytest.approx(-0.5)
+        assert diff.overall_delta is None  # Legacy reports cannot establish a comparable delta.
 
     def test_zero_delta_for_unchanged(self):
         reporter = DiffReporter()
@@ -339,7 +339,7 @@ class TestOverallDelta:
 
         diff = reporter.diff(current, baseline)
 
-        assert diff.overall_delta == pytest.approx(0.0)
+        assert diff.overall_delta is None  # Legacy reports cannot establish a comparable delta.
 
 
 # ---------------------------------------------------------------------------
@@ -521,7 +521,7 @@ class TestFormatGithub:
 
 class TestNewQuestionHandling:
 
-    def test_new_question_not_in_baseline_is_ignored(self):
+    def test_new_question_not_in_baseline_is_reported(self):
         """Questions that exist in current but not baseline should not appear
         in regressions, improvements, or unchanged."""
         reporter = DiffReporter()
@@ -542,6 +542,8 @@ class TestNewQuestionHandling:
         assert len(diff.regressions) == 0
         assert len(diff.improvements) == 0
         assert len(diff.unchanged) == 0
+        assert diff.added_questions == ["q-new"]
+        assert not diff.compatible
 
 
 # ---------------------------------------------------------------------------

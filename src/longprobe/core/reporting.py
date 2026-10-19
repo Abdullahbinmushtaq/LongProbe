@@ -26,7 +26,11 @@ class ReportError(ValueError):
 
 def fingerprint(contract: dict) -> str:
     content = {key: value for key, value in contract.items() if key != "fingerprint"}
-    return hashlib.sha256(json.dumps(content, sort_keys=True, ensure_ascii=False, allow_nan=False).encode()).hexdigest()
+    try:
+        encoded = json.dumps(content, sort_keys=True, ensure_ascii=False, allow_nan=False).encode()
+    except (ValueError, TypeError):
+        raise ReportError("Report contract contains invalid values.") from None
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def question_contract(question: GoldenQuestion, top_k: int, threshold: float) -> dict:

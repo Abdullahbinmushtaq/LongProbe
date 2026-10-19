@@ -116,13 +116,16 @@ class RecallScorer:
             considered *passed*.
     """
 
-    def __init__(self, recall_threshold: float = 0.8) -> None:
-        if not 0.0 <= recall_threshold <= 1.0:
+    def __init__(self, recall_threshold: float = 0.8, question_thresholds: dict[str, float] | None = None) -> None:
+        if isinstance(recall_threshold, bool) or not isinstance(recall_threshold, (int, float)) or not math.isfinite(recall_threshold) or not 0.0 <= recall_threshold <= 1.0:
             raise ValueError(
                 f"recall_threshold must be between 0.0 and 1.0, "
                 f"got {recall_threshold}"
             )
         self.recall_threshold = recall_threshold
+        self.question_thresholds = dict(question_thresholds or {})
+        if any(not isinstance(k, str) or isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) or not 0 <= v <= 1 for k, v in self.question_thresholds.items()):
+            raise ValueError("question_thresholds must map question IDs to finite thresholds in [0, 1].")
 
     # ------------------------------------------------------------------
     # Public API
@@ -180,7 +183,7 @@ class RecallScorer:
             required_chunks=required_chunks,
             missing_chunks=missing_chunks,
             found_chunks=found,
-            passed=recall >= self.recall_threshold,
+            passed=recall >= self.question_thresholds.get(question.id, self.recall_threshold),
             latency_ms=0.0,
         )
 
@@ -206,6 +209,8 @@ class RecallScorer:
 
         if not golden_set.questions:
             raise EmptyEvaluationError("No questions to evaluate; add or approve golden questions.")
+        if set(self.question_thresholds) - {q.id for q in golden_set.questions}:
+            raise ValueError("question_thresholds references unknown question IDs.")
         if top_k_override is not None and (type(top_k_override) is not int or top_k_override <= 0):
             raise ValueError("top_k_override must be a positive integer.")
         results: list[QuestionResult] = []
@@ -218,7 +223,7 @@ class RecallScorer:
             elapsed = time.perf_counter() - start
 
             result = self.score(question, retrieved_docs)
-            result.contract = question_contract(question, top_k, self.recall_threshold)
+            result.contract = question_contract(question, top_k, self.question_thresholds.get(question.id, self.recall_threshold))
             result.latency_ms = elapsed * 1000.0
             results.append(result)
 

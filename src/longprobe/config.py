@@ -164,6 +164,7 @@ class ScoringConfig:
 
     recall_threshold: float = 0.8
     fail_on_regression: bool = True
+    question_thresholds: dict[str, float] = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -183,6 +184,7 @@ class BaselineConfig:
 
     db_path: str = ".longprobe/baselines.db"
     auto_compare: bool = True
+    quality_gate: str = "all_questions"
 
 
 # ---------------------------------------------------------------------------
@@ -341,6 +343,8 @@ def _build_section(cls, raw: Any, path: str):
                 raise ConfigurationError(f"{key} must be a mapping.")
             if f.name == "headers" and any(not isinstance(k, str) or not isinstance(v, str) for k, v in value.items()):
                 raise ConfigurationError(f"{key} must map header names to strings.")
+            if key == "scoring.question_thresholds" and any(not isinstance(k, str) or not k.strip() or isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) or not 0 <= v <= 1 for k, v in value.items()):
+                raise ConfigurationError("scoring.question_thresholds must map question IDs to finite numbers between 0 and 1.")
         elif isinstance(default, bool):
             forms = {"true": True, "1": True, "yes": True, "on": True, "false": False, "0": False, "no": False, "off": False}
             if isinstance(value, str) and value.lower() in forms:
@@ -367,6 +371,8 @@ def _build_section(cls, raw: Any, path: str):
             raise ConfigurationError(f"{key} must be positive.")
         if key == "scoring.recall_threshold" and not 0 <= value <= 1:
             raise ConfigurationError(f"{key} must be between 0 and 1.")
+        if key == "baseline.quality_gate" and value not in {"all_questions", "aggregate"}:
+            raise ConfigurationError("baseline.quality_gate must be all_questions or aggregate.")
         if key == "retriever.port" and not 1 <= value <= 65535:
             raise ConfigurationError(f"{key} must be between 1 and 65535.")
         if key == "embedder.dimensions" and value < 0:
