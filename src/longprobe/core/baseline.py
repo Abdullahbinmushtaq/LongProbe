@@ -20,7 +20,7 @@ import os
 import sqlite3
 from contextlib import closing
 from dataclasses import asdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from .scorer import ProbeReport, QuestionResult
 
@@ -168,7 +168,7 @@ class BaselineStore:
         """
         report_json = json.dumps(asdict(report), ensure_ascii=False)
         timestamp = (
-            datetime.now(timezone.utc).isoformat()
+            datetime.now(UTC).isoformat()
             if not report.timestamp
             else report.timestamp
         )

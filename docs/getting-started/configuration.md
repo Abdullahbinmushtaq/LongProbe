@@ -1,169 +1,91 @@
 # Configuration
 
-LongProbe uses two main configuration files:
+`goldens.yaml` defines what to test: questions, expected chunks, match mode, tags, approval status, and per-question `top_k`. `longprobe.yaml` defines connections, scoring, baselines, and generation settings.
 
-- `goldens.yaml` - Defines your golden question set
-- `longprobe.yaml` - Configures retriever, embedder, and scoring
-
-## Configuration File: longprobe.yaml
-
-### Complete Example
+## Working retrieval configuration
 
 ```yaml
 retriever:
-  type: "chroma"
-  chroma:
-    persist_directory: "./chroma_db"
-    collection: "my_documents"
-
-embedder:
-  provider: "local"
-  model: "text-embedding-3-small"
-  dimensions: 1536
-
+  type: http
+  http:
+    url: http://localhost:8000/api/retrieve
+    method: POST
+    body_template: '{"query": "{question}", "top_k": {top_k}}'
+    headers:
+      Authorization: Bearer ${API_TOKEN}
+    response_mapping:
+      results_path: data.chunks
+      id_field: chunk_id
+      text_field: content
+      score_field: similarity
+    timeout: 30
 scoring:
   recall_threshold: 0.8
   fail_on_regression: true
-
 baseline:
-  db_path: ".longprobe/baselines.db"
+  db_path: .longprobe/baselines.db
   auto_compare: true
 ```
 
-## Retriever Configuration
-
-### ChromaDB
+Remove the Authorization header when your local endpoint does not require authentication. HTTP settings live under `retriever.http`. Chroma/Pinecone/Qdrant connection fields live directly under `retriever`:
 
 ```yaml
 retriever:
-  type: "chroma"
-  chroma:
-    persist_directory: "./chroma_db"
-    collection: "my_documents"
+  type: chroma
+  collection: documents
+  persist_directory: ./chroma_db
 ```
 
-### Pinecone
+Pinecone uses `index_name`, `api_key`, and `namespace`. Qdrant uses `collection`, `host`, `port`, and optional `api_key`. Their normal text-question flow is not connected to query embeddings in v0.1.3; use a properly configured application HTTP endpoint or custom Python adapter until that integration is implemented. Framework retrievers require the Python API.
+
+## Strict loading and accepted values
+
+CLI commands that accept a configuration path require that selected file to exist and be valid. Invalid files never silently become default settings. `init`, `edit`, and help need no retriever configuration. Baseline list/delete use their existing `--db-path` option rather than reading `longprobe.yaml`.
+
+Python callers supplying an adapter may omit the conventional `longprobe.yaml`; documented defaults are then used. `./longprobe.yaml` has the same behavior. Missing custom/absolute selected paths raise `FileNotFoundError`. Any existing invalid selected file fails.
+
+- Supplied sections and nested HTTP settings must be mappings.
+- Omitted optional fields keep defaults; explicit invalid or null values fail.
+- Integer fields accept integers or integer strings; booleans and fractional values are invalid.
+- Floats must be finite. Recall threshold must be between 0 and 1.
+- Ports must be 1–65535, dimensions nonnegative, and timeouts/batch sizes/generation counts/token limits positive.
+- Booleans accept YAML booleans or case-insensitive strings `true/false`, `1/0`, `yes/no`, `on/off`.
+- Provider-specific `extra` mappings are preserved; this patch does not redesign unknown-key handling.
+
+Validation errors identify fields without printing their values. Correct misspelled or incorrectly nested known settings; extra fields are not automatically used by every CLI adapter.
+
+## Environment variables and active providers
+
+`${VARIABLE}` values are expanded recursively. Unresolved placeholders in fields used by the current operation fail before its service calls. Unused generator/embedder credential placeholders do not block unrelated retrieval checks. Supplied typed numeric/structure settings are still validated even in inactive sections.
+
+Generator configuration example:
 
 ```yaml
-retriever:
-  type: "pinecone"
-  pinecone:
-    index_name: "my-index"
-    api_key: "${PINECONE_API_KEY}"
-    namespace: ""
+generator:
+  provider: ollama
+  model: your-installed-model
+  base_url: http://localhost:11434
+  num_questions: 20
+  temperature: 0.7
+  max_tokens: 4096
 ```
 
-### Qdrant
+Cloud generation may use `generator.api_key` or the provider environment variable, such as `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `GEMINI_API_KEY`. Changing a generator model affects generated questions, not checks against existing goldens. Auto-capture validates both generator and retriever settings before generation. Local Chroma, unauthenticated Qdrant, and Ollama do not require unrelated cloud credentials.
 
-```yaml
-retriever:
-  type: "qdrant"
-  qdrant:
-    collection: "my_collection"
-    host: "localhost"
-    port: 6333
-    api_key: "${QDRANT_API_KEY}"
-```
+## Scoring and baselines
 
-### HTTP API
+`recall_threshold` controls per-question pass/fail. `fail_on_regression: true` makes `check` exit unsuccessfully for a failed question or detected question-level baseline recall decrease. Setting it to false does not suppress configuration or empty-suite failures.
 
-```yaml
-retriever:
-  type: "http"
-  http:
-    url: "http://localhost:8000/api/retrieve"
-    method: "POST"
-    headers:
-      Authorization: "Bearer ${API_TOKEN}"
-    body_template: '{"query": "{question}", "top_k": {top_k}}'
-    response_mapping:
-      results_path: "data.chunks"
-      text_field: "content"
-      id_field: "id"
-```
+`baseline.db_path` selects SQLite storage. `auto_compare` compares with the literal label `latest`, if it exists. CI must restore this database explicitly when historical comparison is needed. No baseline schema migration is introduced.
 
-## Embedder Configuration
+## Embedding and matching limitations
 
-### OpenAI
+The standalone `QueryEmbedder` utility supports provider/model/dimensions/batch-size settings, but normal `check` and `LongProbe.run()` do not invoke it. Local test mode produces zero vectors, not useful semantic embeddings. Changing only `embedder.model` does not change normal retrieval.
 
-```yaml
-embedder:
-  provider: "openai"
-  model: "text-embedding-3-small"
-  api_key: "${OPENAI_API_KEY}"
-  dimensions: 1536
-```
+`match_mode: semantic` uses word-frequency cosine similarity. Its threshold belongs to each golden question and does not use `QueryEmbedder`.
 
-### Hugging Face
+## Safe files
 
-```yaml
-embedder:
-  provider: "huggingface"
-  model: "sentence-transformers/all-MiniLM-L6-v2"
-```
+Golden saves, initialized configuration files, and generated question exports use a same-directory temporary file, flush, and atomic replacement. Existing restrictions are preserved; read-only or symbolic-link replacement targets are rejected. Recoverable failures preserve original destination bytes. The guarantee is per file for a single writer, not a multi-file transaction or concurrent-write solution.
 
-### Local (No API)
-
-```yaml
-embedder:
-  provider: "local"
-  model: "text-embedding-3-small"
-```
-
-## Scoring Configuration
-
-```yaml
-scoring:
-  recall_threshold: 0.8        # Minimum recall to pass
-  fail_on_regression: true     # Exit 1 if regression detected
-```
-
-## Baseline Configuration
-
-```yaml
-baseline:
-  db_path: ".longprobe/baselines.db"  # SQLite database path
-  auto_compare: true                   # Auto-compare vs latest baseline
-```
-
-## Environment Variables
-
-Use `${VAR_NAME}` syntax to reference environment variables:
-
-```yaml
-retriever:
-  type: "pinecone"
-  pinecone:
-    api_key: "${PINECONE_API_KEY}"
-```
-
-Set in your environment:
-
-```bash
-export PINECONE_API_KEY="your-key-here"
-```
-
-## Configuration Reference
-
-| Section | Field | Type | Default | Description |
-|---------|-------|------|---------|-------------|
-| `retriever` | `type` | string | `"chroma"` | Adapter type |
-| `retriever.chroma` | `persist_directory` | string | `""` | ChromaDB path |
-| `retriever.chroma` | `collection` | string | `""` | Collection name |
-| `retriever.pinecone` | `index_name` | string | `""` | Pinecone index |
-| `retriever.pinecone` | `api_key` | string | `""` | API key |
-| `retriever.qdrant` | `host` | string | `"localhost"` | Qdrant host |
-| `retriever.qdrant` | `port` | int | `6333` | Qdrant port |
-| `embedder` | `provider` | string | `"openai"` | Embedding provider |
-| `embedder` | `model` | string | `""` | Model name |
-| `embedder` | `dimensions` | int | `0` | Embedding dimensions |
-| `scoring` | `recall_threshold` | float | `0.8` | Min recall to pass |
-| `scoring` | `fail_on_regression` | bool | `true` | Exit 1 on regression |
-| `baseline` | `db_path` | string | `.longprobe/baselines.db` | SQLite path |
-| `baseline` | `auto_compare` | bool | `true` | Auto-compare vs baseline |
-
-## Next Steps
-
-- [Golden Questions](../guide/golden-questions.md) - Define your test cases
-- [CLI Reference](../guide/cli-reference.md) - Learn CLI commands
-- [Vector Stores](../integrations/vector-stores.md) - Adapter details
+`init` preserves existing files unless `--force` is specified. Auto-capture always requires a valid existing golden file and merges new drafts. Question-list export requires `--overwrite` to replace an existing `--output` file. Back up important files before upgrading or making deliberate replacements.

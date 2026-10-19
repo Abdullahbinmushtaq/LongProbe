@@ -5,8 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock
 
-import pytest
-import typer
 import yaml
 
 from longprobe.cli.main import check, diff
@@ -28,7 +26,7 @@ def _setup_draft_test_files(tmp_path: Path) -> tuple[Path, Path, Path]:
     goldens_path.write_text(yaml.dump(goldens_data))
 
     config_data = {
-        "retriever": {"type": "http", "url": "http://localhost:8000/retrieve"},
+        "retriever": {"type": "http", "http": {"url": "http://localhost:8000/retrieve"}},
         "scoring": {"recall_threshold": 0.50, "fail_on_regression": False},
         "baseline": {"db_path": str(db_path), "auto_compare": False},
     }
@@ -55,7 +53,7 @@ def test_check_excludes_drafts_by_default(tmp_path: Path, monkeypatch, capsys):
     )
 
     captured = capsys.readouterr()
-    assert "Notice: 1 draft question(s) excluded" in captured.out or "Notice: 1 draft question(s) excluded" in captured.err or True
+    assert "Notice: 1 draft question(s) excluded" in captured.out or "Notice: 1 draft question(s) excluded" in captured.err
 
 
 def test_check_includes_drafts_with_flag(tmp_path: Path, monkeypatch):

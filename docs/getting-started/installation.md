@@ -2,7 +2,7 @@
 
 ## Requirements
 
-- Python 3.9 or higher
+- Python 3.11 or higher
 - pip or uv package manager
 
 ## Install with pip
@@ -80,14 +80,11 @@ pip install -e ".[dev]"
 ## Verify Installation
 
 ```bash
-longprobe --version
+python -c 'import longprobe; print(longprobe.__version__)'
+longprobe --help
 ```
 
-You should see output like:
-
-```
-LongProbe version 0.1.0
-```
+Python 3.10 and older are not supported. Package installers enforce the Python 3.11 minimum.
 
 ## Next Steps
 

@@ -79,8 +79,8 @@ class QdrantAdapter(AbstractRetrieverAdapter):
             logger.warning("No vector embedding provided for Qdrant retrieval.")
             return []
 
+        client = self._build_client()
         try:
-            client = self._build_client()
             response = client.query_points(
                 collection_name=self.collection_name,
                 query=vector,

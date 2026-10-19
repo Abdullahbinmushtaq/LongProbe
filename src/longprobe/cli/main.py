@@ -20,8 +20,9 @@ import sys
 import time
 from dataclasses import asdict
 from datetime import datetime
+from functools import wraps
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
 import typer
 from rich.console import Console
@@ -30,20 +31,21 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.prompt import Confirm, Prompt
 from rich.table import Table
 
+from longprobe._files import atomic_write_text, check_destination
 from longprobe.adapters import (
     ChromaAdapter,
     HttpAdapter,
     PineconeAdapter,
     QdrantAdapter,
 )
-from longprobe.config import GeneratorConfig, ProbeConfig
+from longprobe.config import ConfigurationError, GeneratorConfig, ProbeConfig
 from longprobe.core.baseline import BaselineStore
 from longprobe.core.diff import DiffReporter
 from longprobe.core.docparser import DocumentParser
 from longprobe.core.explain import explain_failure
 from longprobe.core.generator import QuestionGenerator
 from longprobe.core.golden import GoldenQuestion, GoldenSet, generate_question_id
-from longprobe.core.scorer import ProbeReport, RecallScorer
+from longprobe.core.scorer import EmptyEvaluationError, ProbeReport, RecallScorer
 
 # ---------------------------------------------------------------------------
 # App setup
@@ -193,42 +195,37 @@ def _load_golden_set(path: Path) -> GoldenSet | None:
 
     try:
         golden_set = GoldenSet.from_yaml(str(path))
-    except Exception as exc:
-        console.print(
-            f"[bold red]Error:[/bold red] Failed to parse golden set: {exc}",
-        )
-        return None
-
-    if not golden_set.questions:
-        console.print(
-            "[bold yellow]Warning:[/bold yellow] Golden set contains no questions.",
-        )
+    except (OSError, ValueError):
+        console.print(f"Cannot load golden set {path}; repair the file or select a new path.", markup=False)
         return None
 
     return golden_set
 
 
 def _load_config(path: Path) -> ProbeConfig:
-    """Load configuration from YAML, falling back to defaults.
+    """Require the selected CLI configuration; never silently substitute defaults."""
+    return ProbeConfig.from_yaml(str(path))
 
-    A warning is printed when the file does not exist so the user knows they
-    are running with built-in defaults.
-    """
-    if not path.exists():
-        console.print(
-            f"[bold yellow]Warning:[/bold yellow] Config file not found: {path}",
-        )
-        console.print("Using default configuration values.\n")
-        return ProbeConfig.defaults()
 
-    try:
-        return ProbeConfig.from_yaml(str(path))
-    except Exception as exc:
-        console.print(
-            f"[bold yellow]Warning:[/bold yellow] Failed to parse config ({exc}). "
-            "Using defaults.\n",
-        )
-        return ProbeConfig.defaults()
+def _command_errors(fn):
+    """Present expected input failures without leaking YAML/request contents."""
+    @wraps(fn)
+    def wrapped(*args, **kwargs):
+        try:
+            return fn(*args, **kwargs)
+        except EmptyEvaluationError as exc:
+            console.print(str(exc), markup=False)
+            raise typer.Exit(1) from None
+        except ConfigurationError as exc:
+            console.print(f"Configuration error: {exc}", markup=False)
+            raise typer.Exit(1) from None
+        except OSError as exc:
+            console.print(f"File operation failed for {exc.filename or 'selected destination'}; check the path and permissions. Run longprobe init if configuration is missing.", markup=False)
+            raise typer.Exit(1) from None
+        except ValueError:
+            console.print("Invalid input; check golden questions and command options. Existing files were not replaced.")
+            raise typer.Exit(1) from None
+    return wrapped
 
 
 def _create_adapter_from_config(config: ProbeConfig):
@@ -502,11 +499,13 @@ def _run_probe(
         if golden_set is None:
             raise typer.Exit(1)
 
+        if not golden_set.questions:
+            raise EmptyEvaluationError("No questions in golden set; add golden questions before checking.")
+
         if tags:
             golden_set = golden_set.filter_by_tags(tags)
             if not golden_set.questions:
-                console.print(f"[bold yellow]Warning:[/bold yellow] No questions match the provided tags: {tags}")
-                raise typer.Exit(0)
+                raise EmptyEvaluationError("No questions match the selected tags; correct the tags or add matching questions.")
 
         draft_count = sum(1 for q in golden_set.questions if q.status.lower() == "draft")
         if not include_drafts:
@@ -517,11 +516,7 @@ def _run_probe(
                     f"Run [cyan]longprobe edit[/cyan] to review and approve.[/dim]\n"
                 )
             if not golden_set.questions:
-                console.print(
-                    "[bold yellow]Warning:[/bold yellow] No approved golden questions found.\n"
-                    "Run [cyan]longprobe edit[/cyan] to review draft questions or use [cyan]--include-drafts[/cyan]."
-                )
-                raise typer.Exit(0)
+                raise EmptyEvaluationError("No approved questions remain; run longprobe edit to approve drafts or use --include-drafts.")
 
         # 2. Load config
         progress.add_task("Loading config...", total=None)
@@ -529,6 +524,11 @@ def _run_probe(
 
         # 3. Create adapter
         progress.add_task("Initialising retriever adapter...", total=None)
+        if threshold_override is not None:
+            config.scoring.recall_threshold = threshold_override
+        if top_k_override is not None and (type(top_k_override) is not int or top_k_override <= 0):
+            raise ConfigurationError("top_k must be a positive integer.")
+        config.validate_for("evaluate")
         adapter = _create_adapter_from_config(config)
 
     # 4. Create scorer
@@ -573,6 +573,7 @@ def _run_probe(
 
 
 @app.command()
+@_command_errors
 def init(
     force: bool = typer.Option(
         False,
@@ -607,7 +608,7 @@ def init(
             "Use --force to overwrite.",
         )
     else:
-        goldens_path.write_text(GOLDENS_TEMPLATE, encoding="utf-8")
+        atomic_write_text(goldens_path, GOLDENS_TEMPLATE, overwrite=force)
         console.print(f"[green]Created [bold]{goldens_path}[/bold][/green]")
 
     # Write longprobe.yaml
@@ -617,7 +618,7 @@ def init(
             "Use --force to overwrite.",
         )
     else:
-        config_path.write_text(CONFIG_TEMPLATE, encoding="utf-8")
+        atomic_write_text(config_path, CONFIG_TEMPLATE, overwrite=force)
         console.print(f"[green]Created [bold]{config_path}[/bold][/green]")
 
     console.print()
@@ -635,6 +636,7 @@ def init(
 
 
 @app.command()
+@_command_errors
 def check(
     goldens: Path = typer.Option(
         "goldens.yaml",
@@ -710,6 +712,7 @@ def check(
 
 
 @baseline_app.command("save")
+@_command_errors
 def baseline_save(
     label: str = typer.Option(
         "latest",
@@ -790,6 +793,7 @@ def baseline_save(
 
 
 @baseline_app.command("list")
+@_command_errors
 def baseline_list(
     db_path: Path = typer.Option(
         ".longprobe/baselines.db",
@@ -833,6 +837,7 @@ def baseline_list(
 
 
 @baseline_app.command("delete")
+@_command_errors
 def baseline_delete(
     label: str = typer.Option(
         ...,
@@ -874,6 +879,7 @@ def baseline_delete(
 
 
 @app.command()
+@_command_errors
 def diff(
     baseline_a: str | None = typer.Argument(
         None,
@@ -932,6 +938,7 @@ def diff(
 ) -> None:
     """Compare probe results against a saved baseline, or compare two historical snapshots."""
     cfg = _load_config(config)
+    cfg.validate_for("baseline")
     store = BaselineStore(db_path=cfg.baseline.db_path)
 
     # Mode 1: Compare two historical baselines: longprobe diff baseline_a baseline_b
@@ -1022,6 +1029,7 @@ def diff(
 
 
 @app.command()
+@_command_errors
 def watch(
     goldens: Path = typer.Option(
         "goldens.yaml",
@@ -1125,6 +1133,7 @@ def watch(
 
 
 @app.command()
+@_command_errors
 def capture(
     question: list[str] = typer.Option(
         [],
@@ -1190,6 +1199,10 @@ def capture(
         console.print("[bold red]Error:[/bold red] No questions provided. Use --question or --questions-file.")
         raise typer.Exit(1)
 
+    check_destination(goldens, overwrite=True)
+    if top_k <= 0 or match_mode not in {"id", "text", "semantic"}:
+        raise ConfigurationError("top_k must be positive; match_mode must be id, text, or semantic.")
+
     # 2. Load existing golden set or create empty
     if goldens.exists():
         golden_set = _load_golden_set(goldens)
@@ -1203,6 +1216,7 @@ def capture(
 
     # 3. Load config and adapter
     cfg = _load_config(config)
+    cfg.validate_for("capture")
     adapter = _create_adapter_from_config(cfg)
 
     existing_ids = {q.id for q in golden_set.questions}
@@ -1227,9 +1241,9 @@ def capture(
             # Auto mode: accept all chunks
             for r in results:
                 if match_mode == "id":
-                    approved_chunks.append(r.get("id", ""))
+                    approved_chunks.extend([r["id"]] if isinstance(r.get("id"), str) and r["id"].strip() else [])
                 else:
-                    approved_chunks.append(r.get("text", ""))
+                    approved_chunks.extend([r["text"]] if isinstance(r.get("text"), str) and r["text"].strip() else [])
         else:
             # Interactive mode
             skip_question = False
@@ -1311,6 +1325,7 @@ def capture(
 
 
 @app.command()
+@_command_errors
 def generate(
     path: Path = typer.Argument(
         ...,
@@ -1377,8 +1392,12 @@ def generate(
         "--id-prefix",
         help="Prefix for auto-generated question IDs.",
     ),
+    overwrite: Annotated[bool, typer.Option("--overwrite", help="Replace an existing question-list --output file; not valid with --auto-capture.")] = False,
 ) -> None:
     """Generate golden questions from documents using an LLM."""
+    if (auto_capture and output is not None) or (overwrite and (output is None or auto_capture)):
+        raise ConfigurationError("Use --overwrite only with --output; --output and --auto-capture are separate modes.")
+
     # 1. Load config
     cfg = _load_config(config)
 
@@ -1407,25 +1426,26 @@ def generate(
 
     effective_n = num_questions if num_questions > 0 else gen_config.num_questions
 
-    # 2. Check API key early (skip for local providers like ollama).
-    if not gen_config.api_key and gen_config.provider.lower() not in ("ollama", "local"):
-        # Try common env vars based on provider.
-        import os
-        env_hints = {
-            "openai": "OPENAI_API_KEY",
-            "anthropic": "ANTHROPIC_API_KEY",
-            "gemini": "GEMINI_API_KEY",
-            "google": "GOOGLE_API_KEY",
-        }
-        env_var = env_hints.get(gen_config.provider, f"{gen_config.provider.upper()}_API_KEY")
-        if not os.environ.get(env_var):
-            console.print(
-                f"[bold red]Error:[/bold red] No API key configured for "
-                f"{gen_config.provider}.\n"
-                f"Set the environment variable [cyan]{env_var}[/cyan] or add "
-                f"[cyan]generator.api_key[/cyan] to [bold]{config}[/bold]."
-            )
-            raise typer.Exit(1)
+    cfg.generator = gen_config
+    cfg.validate_for("auto_capture" if auto_capture else "generate")
+    gen_config = cfg.generator
+    if auto_capture and match_mode not in {"id", "text", "semantic"}:
+        raise ConfigurationError("match_mode must be id, text, or semantic.")
+    if num_questions < 0 or top_k <= 0:
+        raise ConfigurationError("num_questions must be nonnegative and top_k must be positive.")
+
+    golden_set = None
+    if auto_capture:
+        check_destination(goldens, overwrite=True)
+        try:
+            golden_set = GoldenSet.from_yaml(str(goldens))
+        except FileNotFoundError:
+            golden_set = GoldenSet(name="auto-generated", version="1.0", questions=[])
+    elif output is not None:
+        try:
+            check_destination(output, overwrite=overwrite)
+        except FileExistsError:
+            raise ConfigurationError("Output exists; use --overwrite to replace it or choose a new --output path.") from None
 
     # 3. Parse documents.
     with Progress(
@@ -1467,8 +1487,8 @@ def generate(
     except ImportError as exc:
         console.print(f"[bold red]Error:[/bold red] {exc}")
         raise typer.Exit(1)
-    except RuntimeError as exc:
-        console.print(f"[bold red]LLM Error:[/bold red] {exc}")
+    except RuntimeError:
+        console.print("LLM generation failed; check provider credentials, model, and connection.")
         raise typer.Exit(1)
 
     if not questions:
@@ -1498,26 +1518,8 @@ def generate(
             )
             raise typer.Exit(1)
 
-        # 5b. Load existing golden set or create empty.
-        if goldens.exists():
-            try:
-                golden_set = GoldenSet.from_yaml(str(goldens))
-                console.print(f"[dim]Loaded existing golden set '{goldens}'[/dim]")
-            except Exception:
-                golden_set = GoldenSet(
-                    name="auto-generated",
-                    version="1.0",
-                    questions=[],
-                )
-                console.print(
-                    f"[dim]Could not parse existing '{goldens}', creating new golden set.[/dim]"
-                )
-        else:
-            golden_set = GoldenSet(
-                name="auto-generated",
-                version="1.0",
-                questions=[],
-            )
+        # The destination has already passed preflight before generation.
+        assert golden_set is not None
 
         existing_ids = {q.id for q in golden_set.questions}
         new_questions: list[GoldenQuestion] = []
@@ -1537,8 +1539,8 @@ def generate(
                 start = time.perf_counter()
                 results = adapter.retrieve(q_text, top_k=top_k)
                 elapsed = (time.perf_counter() - start) * 1000
-            except Exception as exc:
-                console.print(f"    [yellow]Retriever error: {exc}. Skipping.[/yellow]")
+            except Exception:
+                console.print("    Retriever request failed; check connection and credentials. Skipping.")
                 skipped += 1
                 continue
 
@@ -1555,9 +1557,9 @@ def generate(
             approved_chunks: list[str] = []
             for r in results:
                 if match_mode == "id":
-                    approved_chunks.append(r.get("id", ""))
+                    approved_chunks.extend([r["id"]] if isinstance(r.get("id"), str) and r["id"].strip() else [])
                 else:
-                    approved_chunks.append(r.get("text", ""))
+                    approved_chunks.extend([r["text"]] if isinstance(r.get("text"), str) and r["text"].strip() else [])
 
             if not approved_chunks:
                 skipped += 1
@@ -1589,6 +1591,9 @@ def generate(
                 raise typer.Exit(1)
 
         captured_count = len(new_questions)
+        if not captured_count:
+            console.print(f"No valid new questions captured; existing goldens were unchanged. Skipped: {skipped}")
+            return
         console.print(
             Panel(
                 f"Generated:   [bold cyan]{len(questions)}[/bold cyan] questions\n"
@@ -1614,16 +1619,13 @@ def generate(
                 "model": gen_config.model,
             },
         }
-        output.parent.mkdir(parents=True, exist_ok=True)
-        output.write_text(
-            _yaml.dump(data, default_flow_style=False, sort_keys=False, allow_unicode=True),
-            encoding="utf-8",
-        )
+        content = _yaml.safe_dump(data, default_flow_style=False, sort_keys=False, allow_unicode=True)
+        atomic_write_text(output, content, overwrite=overwrite)
         console.print(
             Panel(
                 f"Generated [bold cyan]{len(questions)}[/bold cyan] questions.\n"
                 f"Saved to [bold]{output}[/bold]\n\n"
-                f"[dim]💡 Hint: Run [cyan]longprobe edit[/cyan] to review & approve questions.[/dim]",
+                f"[dim]This is a question list, not an evaluable golden set; capture and verify expected evidence next.[/dim]",
                 title="Generation Complete",
                 border_style="green",
             )
@@ -1692,6 +1694,7 @@ def edit_delete_question(golden_set: GoldenSet, question_id: str) -> bool:
 
 
 @app.command()
+@_command_errors
 def edit(
     goldens: Path = typer.Option(
         "goldens.yaml",
@@ -1818,6 +1821,7 @@ def edit(
 
 
 @app.command()
+@_command_errors
 def explain(
     question_id: str = typer.Argument(
         ...,

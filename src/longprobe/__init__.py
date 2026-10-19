@@ -5,6 +5,8 @@ Define Golden Questions once. Run ``longprobe check`` on every commit.
 Get an exact diff of which document chunks were lost — before your users notice.
 """
 
+from importlib.metadata import version
+
 from longprobe.adapters import (
     ChromaAdapter,
     HttpAdapter,
@@ -22,7 +24,7 @@ from longprobe.core.embedder import QueryEmbedder
 from longprobe.core.golden import GoldenQuestion, GoldenSet
 from longprobe.core.scorer import ProbeReport, QuestionResult, RecallScorer
 
-__version__ = "0.1.0"
+__version__ = version("longprobe")
 
 __all__ = [
     "AbstractRetrieverAdapter",
@@ -79,13 +81,16 @@ class LongProbe:
         self.golden_set = raw_set if include_drafts else raw_set.filter_by_status("approved")
 
         config_file = Path(config_path)
-        if config_file.exists():
+        try:
             self.config = ProbeConfig.from_yaml(str(config_file))
-        else:
+        except FileNotFoundError:
+            if config_file != Path("longprobe.yaml") or config_file.is_symlink():
+                raise
             self.config = ProbeConfig.defaults()
 
         if recall_threshold is not None:
             self.config.scoring.recall_threshold = recall_threshold
+        self.config.validate_for("evaluate", owns_retriever=False)
 
         self.scorer = RecallScorer(
             recall_threshold=self.config.scoring.recall_threshold
@@ -98,6 +103,8 @@ class LongProbe:
 
     def run(self, top_k_override: int | None = None) -> ProbeReport:
         """Run the probe against the golden set and return a report."""
+        self._last_report = None
+        self.config.validate_for("evaluate", owns_retriever=False)
         report = self.scorer.score_all(
             self.golden_set,
             self.adapter.retrieve,

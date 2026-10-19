@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.3] - Unreleased
+
+### Fixed
+- Runtime version now derives from installed package metadata; base startup keeps optional SDKs lazy and missing SDK calls give installation guidance.
+- Invalid CLI configuration fails explicitly. Strict shapes, scalar types/ranges, and active environment credentials are validated before service calls; deliberate Python default configuration remains supported.
+- Empty evaluations fail across the scorer, Python facade, and CLI; failed reruns invalidate older reports for baseline saving.
+- Golden writes validate content and use same-directory atomic replacement, preserving existing data on ordinary preparation/write failures.
+- Auto-capture validates existing goldens before generation and never resets an unreadable or invalid set. Initialization preserves files unless forced.
+
+### Added
+- Explicit `generate --output PATH --overwrite` for question-list replacement; incompatible output/auto-capture flags fail preflight.
+- Controlled HTTP workflow and failure-injection regression tests across supported Python versions.
+- Local HTTP quick-start fixture, accurate configuration examples, and recovery/known-limitations documentation.
+
+### Compatibility
+- Minimum Python version is now 3.11; Python 3.10 support and its CI job have been removed.
+- Empty selections and invalid settings that previously passed or fell back to defaults now fail.
+- Use an installed editable checkout for development; the runtime version requires distribution metadata.
+- No baseline database/schema migration. Embedding integration, baseline-policy unification, default pytest fixture repair, and general JSON-output cleanup remain deferred.
+
 ## [0.1.2] - 2026-08-11
 
 > **v0.1.2 completes the v0.2.0 Developer Experience roadmap milestone!**

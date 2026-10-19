@@ -1,159 +1,130 @@
 # Quick Start
 
-Get up and running with LongProbe in 5 minutes.
+LongProbe tests whether your retriever still returns expected evidence for a fixed set of questions. It does not automatically inspect every live user query.
 
-## 1. Install LongProbe
+## 1. Install and initialize
 
 ```bash
 pip install longprobe
-```
-
-## 2. Initialize Your Project
-
-```bash
 longprobe init
 ```
 
-This creates three files:
+Initialization creates two example files and a baseline directory:
 
-- `.longprobe/` - Directory for baseline storage
-- `goldens.yaml` - Your golden question set
-- `longprobe.yaml` - Configuration file
+- `goldens.yaml`: questions and required evidence.
+- `longprobe.yaml`: retrieval connection, scoring, and baseline settings.
+- `.longprobe/`: local baseline storage.
 
-## 3. Define Golden Questions
+The file content comes from `GOLDENS_TEMPLATE` and `CONFIG_TEMPLATE` strings in CLI source. `init` does not read documents, embeddings, or a database. Existing files are preserved unless you explicitly run `longprobe init --force`.
 
-Edit `goldens.yaml` to define your test cases:
+## 2. Configure a retriever
 
-```yaml
-name: "my-rag-golden-set"
-version: "1.0"
+You need an existing retrieval endpoint or supported store. For a synthetic local example, run this command from a source checkout in another terminal:
 
-questions:
-  - id: "q1"
-    question: "What is the refund policy?"
-    match_mode: "text"
-    required_chunks:
-      - "30-day money-back guarantee"
-      - "full refund within 30 days"
-    top_k: 5
-    tags: ["policy", "critical"]
-
-  - id: "q2"
-    question: "How do I reset my password?"
-    match_mode: "text"
-    required_chunks:
-      - "click forgot password"
-      - "check your email"
-    top_k: 5
+```bash
+python examples/http_retriever.py
 ```
 
-## 4. Configure Your Vector Store
-
-Edit `longprobe.yaml`:
+This development fixture returns a known refund-policy chunk; it is not a production retrieval service. Configure `longprobe.yaml`:
 
 ```yaml
 retriever:
-  type: "chroma"
-  chroma:
-    persist_directory: "./chroma_db"
-    collection: "my_documents"
-
-embedder:
-  provider: "local"
-  model: "text-embedding-3-small"
+  type: http
+  http:
+    url: http://127.0.0.1:8000/retrieve
+    method: POST
+    response_mapping:
+      results_path: data.chunks
+      id_field: chunk_id
+      text_field: content
+      score_field: similarity
 
 scoring:
   recall_threshold: 0.8
   fail_on_regression: true
+
+baseline:
+  db_path: .longprobe/baselines.db
+  auto_compare: true
 ```
 
-## 5. Run Your First Check
+For Chroma, install `longprobe[chroma]` and configure `collection` and `persist_directory` directly under `retriever`, not under a nested `chroma` section. The application/store handles its existing embedding model; the `embedder` configuration is not connected to the normal check path in this release.
+
+## 3. Define verified golden questions
+
+Replace the sample cases in `goldens.yaml` with requirements you have verified:
+
+```yaml
+name: refund-policy
+version: "1.0"
+questions:
+  - id: refund_policy
+    question: What is the refund policy?
+    required_chunks:
+      - Refunds are allowed within 30 days.
+    match_mode: text
+    top_k: 5
+    status: approved
+    tags: [policy, critical]
+```
+
+Alternatively, capture a question through your configured retriever:
+
+```bash
+longprobe capture --question "What is the refund policy?" --auto
+longprobe edit
+```
+
+Automatic capture saves drafts. In the editor, review the evidence in YAML as necessary, approve the intended drafts, and save. Interactive capture lets you select evidence and saves approved questions. Do not assume current retrieval output is independently correct ground truth.
+
+For document-based generation, install `longprobe[generate]`, configure your generator provider/model and credentials, then run:
+
+```bash
+longprobe generate ./documents --num-questions 20 --auto-capture
+longprobe edit
+```
+
+PDF/Word extraction depends on installed parsing capabilities. Generating questions without `--auto-capture` produces a question list rather than a complete evaluable golden set. The terminal editor currently edits question text, status, and mode; use YAML to review/change required evidence.
+
+## 4. Check and save a baseline
 
 ```bash
 longprobe check
+longprobe baseline save --label latest
 ```
 
-You'll see output like:
+Every approved question is sent to the retriever. LongProbe matches the returned evidence, calculates recall, and applies the passing threshold. With `fail_on_regression: true`, a below-threshold question or detected baseline regression makes `check` fail.
 
-```
-LongProbe Results
-┏━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━┓
-┃ ID                   ┃ Question            ┃   Recall ┃ Required ┃ Status ┃
-┡━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━┩
-│ q1                   │ What is the refund  │     100% │    2     │   ✓    │
-│                      │ policy?             │          │          │        │
-├──────────────────────┼─────────────────────┼──────────┼──────────┼────────┤
-│ q2                   │ How do I reset my   │     100% │    2     │   ✓    │
-│                      │ password?           │          │          │        │
-└──────────────────────┴─────────────────────┴──────────┴──────────┴────────┘
-╭─────────────────────────────────────────────────────────── Summary ───────╮
-│ Overall Recall:  1.00                                                     │
-│ Pass Rate:       1.00  (2/2)                                              │
-╰───────────────────────────────────────────────────────────────────────────╯
-```
+`latest` is a literal baseline label. Saving a different label does not update it. Baseline-save quality policy is unchanged in this patch: the CLI checks overall recall, while the Python save API has no equivalent quality gate.
 
-## 6. Save a Baseline
+After changing your retrieval pipeline:
 
 ```bash
-longprobe baseline save --label v1.0
+longprobe check
+longprobe diff --baseline latest
 ```
 
-## 7. Make Changes and Compare
+## 5. Recover from input failures
 
-After making changes to your RAG system:
+| Failure | Action |
+|---|---|
+| Missing CLI configuration | Run `init` and configure it, or pass `--config PATH` |
+| Invalid YAML or value | Correct the reported field/syntax; LongProbe will not silently use defaults |
+| Unresolved active credential | Set the named environment variable or fix the active provider setting |
+| No matching/approved questions | Correct tags, add questions, or review and approve drafts |
+| Invalid existing goldens during generation | Repair the file or choose a new `--goldens PATH`; trusted data is not reset |
+| Existing question-list export | Choose a new output path or explicitly use `--output PATH --overwrite` |
+
+Empty suites may be created/edited, but cannot pass evaluation. `--include-drafts` includes actual drafts, not an empty-suite bypass.
+
+## Other entry points
 
 ```bash
-longprobe diff --baseline v1.0
-```
-
-This shows you exactly what changed:
-
-```
-LongProbe Results
-╭─────────────────────────────────────────────────────────── Summary ───────╮
-│ Overall Recall:  0.95                                                     │
-│ Pass Rate:       0.95  (19/20)                                            │
-│ Regressions:     1 question(s) degraded                                   │
-│ vs Baseline:     -0.05                                                    │
-╰───────────────────────────────────────────────────────────────────────────╯
-
-Regressions detected:
-  q5: Recall dropped from 100% to 50%
-    Lost chunks: ["specific technical detail"]
-```
-
-## Common Workflows
-
-### Development Loop
-
-```bash
-# Watch mode - auto re-run on changes
+longprobe check --output github
+longprobe check --tag critical
 longprobe watch
 ```
 
-### CI/CD Integration
+Watch polls the golden file and runs after a change; it does not initially run or watch configuration/remote index changes. Configuration edits take effect the next time a check is invoked.
 
-```bash
-# Fail pipeline on regression
-longprobe check --output github
-```
-
-### Python API
-
-```python
-from longprobe import LongProbe
-from longprobe.adapters import create_adapter
-
-adapter = create_adapter("chroma", collection_name="docs", persist_directory="./db")
-probe = LongProbe(adapter=adapter, goldens_path="goldens.yaml")
-
-report = probe.run()
-assert report.overall_recall >= 0.85
-```
-
-## Next Steps
-
-- [Configuration Guide](configuration.md) - Detailed configuration options
-- [Golden Questions](../guide/golden-questions.md) - Learn how to write effective golden questions
-- [Match Modes](../guide/match-modes.md) - Understand different matching strategies
-- [CLI Reference](../guide/cli-reference.md) - Complete CLI documentation
+See [configuration](configuration.md), [CLI reference](../guide/cli-reference.md), and [v0.1.3 release notes](../releases/v0.1.3.md) for limits and compatibility changes.

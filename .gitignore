@@ -47,6 +47,7 @@ coverage.xml
 *.py,cover
 .hypothesis/
 .pytest_cache/
+.ruff_cache/
 cover/
 
 # Translations
@@ -144,6 +145,7 @@ cython_debug/
 .DS_Store
 
 # Project specific
+/scripts/
 .longprobe/
 chroma_db/
 goldens.yaml
