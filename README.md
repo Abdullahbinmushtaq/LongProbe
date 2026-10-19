@@ -281,7 +281,9 @@ probe.save_baseline(label="v1.0")
 
 # After making changes, evaluate against the explicitly selected reference.
 report2 = probe.run(baseline_label="v1.0")
-print(report2.comparison)
+diff = report2.comparison
+print(f"Regressions: {len(diff['regressions'])}")
+print(f"Improvements: {len(diff['improvements'])}")
 assert report2.quality["passed"], report2.quality["reasons"]
 ```
 
