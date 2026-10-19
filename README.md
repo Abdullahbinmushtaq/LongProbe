@@ -19,7 +19,7 @@
 
 ## Overview
 
-This checkout targets **v0.2.0 (unreleased)**. Use an editable checkout or the built wheel for these changes until publication. See the [release and migration notes](docs/releases/v0.2.0.md).
+This checkout targets **v0.2.0**. Use an editable checkout or the built wheel for these changes until publication. See the [release and migration notes](docs/releases/v0.2.0.md).
 
 > "Did my last commit break retrieval?" — now you know in seconds.
 
@@ -88,7 +88,7 @@ Together they cover the full RAG pipeline from ingestion to production monitorin
 
 ### Installation
 
-Requires **Python 3.11 or newer**. The package-index commands below install a published version. To use this unreleased v0.2.0 checkout, run `pip install -e .` from the directory containing `pyproject.toml`, or install its locally built wheel. See [installation](docs/getting-started/installation.md).
+Requires **Python 3.11 or newer**. The package-index commands below install a published version. To use this v0.2.0 checkout, run `pip install -e .` from the directory containing `pyproject.toml`, or install its locally built wheel. See [installation](docs/getting-started/installation.md).
 
 ```bash
 # Install with UV (recommended)
