@@ -169,6 +169,9 @@ embedder:
 scoring:
   # Minimum recall fraction (0-1) for a question to PASS.
   recall_threshold: 0.8
+  # Optional explicit per-question thresholds take precedence:
+  # question_thresholds:
+  #   q1: 1.0
   # Exit with code 1 when any question fails or regression detected.
   fail_on_regression: true
 
@@ -177,6 +180,8 @@ baseline:
   db_path: .longprobe/baselines.db
   # When true, `longprobe check` automatically diffs against "latest".
   auto_compare: true
+  # Default promotion requires every evaluated approved question to pass.
+  quality_gate: all_questions
 """
 
 # ---------------------------------------------------------------------------
@@ -202,7 +207,9 @@ def _load_golden_set(path: Path) -> GoldenSet | None:
     try:
         golden_set = GoldenSet.from_yaml(str(path))
     except (OSError, ValueError):
-        console.print(f"Cannot load golden set {path}; repair the file or select a new path.", markup=False)
+        console.print(
+            f"Cannot load golden set {path}; repair the file or select a new path.", markup=False
+        )
         return None
 
     return golden_set
@@ -215,6 +222,7 @@ def _load_config(path: Path) -> ProbeConfig:
 
 def _command_errors(fn):
     """Return one safe error object for parsed JSON-mode invocations."""
+
     @wraps(fn)
     def wrapped(*args, **kwargs):
         output = signature(fn).bind_partial(*args, **kwargs).arguments.get("output", "table")
@@ -225,20 +233,45 @@ def _command_errors(fn):
         except Exception as exc:
             if isinstance(exc, BaselineQualityError):
                 code, kind, message = 1, "quality_failure", str(exc)
-            elif isinstance(exc, (ConfigurationError, EmptyEvaluationError, BaselineNotFoundError, ReportError)):
+            elif isinstance(
+                exc, (ConfigurationError, EmptyEvaluationError, BaselineNotFoundError, ReportError)
+            ):
                 code, kind, message = 2, "invalid_input", str(exc)
             elif isinstance(exc, FileNotFoundError):
-                code, kind, message = 2, "missing_input", "Selected input was not found; check paths or run longprobe init."
+                code, kind, message = (
+                    2,
+                    "missing_input",
+                    "Selected input was not found; check paths or run longprobe init.",
+                )
             elif isinstance(exc, ValueError):
-                code, kind, message = 2, "invalid_input", "Invalid input; check golden questions and command options."
+                code, kind, message = (
+                    2,
+                    "invalid_input",
+                    "Invalid input; check golden questions and command options.",
+                )
             elif isinstance(exc, ImportError):
-                code, kind, message = 2, "missing_dependency", "Required optional dependency is missing; install the selected adapter extra."
+                code, kind, message = (
+                    2,
+                    "missing_dependency",
+                    "Required optional dependency is missing; install the selected adapter extra.",
+                )
             else:
-                code, kind, message = 3, "execution_error", "Operation failed; check file permissions and retrieval availability."
+                code, kind, message = (
+                    3,
+                    "execution_error",
+                    "Operation failed; check file permissions and retrieval availability.",
+                )
             if output == "json":
-                write_json({"schema_version": 2, "status": "error", "error": {"code": kind, "message": message}})
+                write_json(
+                    {
+                        "schema_version": 2,
+                        "status": "error",
+                        "error": {"code": kind, "message": message},
+                    }
+                )
             diagnostics.print(message, markup=False)
             raise typer.Exit(code) from None
+
     return wrapped
 
 
@@ -328,8 +361,7 @@ def _display_table(
     total_count = len(report.results)
     summary_lines: list[str] = [
         f"[bold]Overall Recall:[/bold]  {report.overall_recall:.2f}",
-        f"[bold]Pass Rate:[/bold]       {report.pass_rate:.2f}  "
-        f"({passed_count}/{total_count})",
+        f"[bold]Pass Rate:[/bold]       {report.pass_rate:.2f}  ({passed_count}/{total_count})",
     ]
 
     if diff_result is not None:
@@ -356,13 +388,20 @@ def _display_table(
         )
 
     identity = report.baseline_identity
-    summary_lines.append(f"Baseline: {identity.get('resolved_label') or identity.get('requested_label') or 'none'}; comparison: {identity.get('status', 'not_requested')}")
+    summary_lines.append(
+        f"Baseline: {identity.get('resolved_label') or identity.get('requested_label') or 'none'}; comparison: {identity.get('status', 'not_requested')}"
+    )
     if identity.get("timestamp"):
         summary_lines.append(f"Baseline timestamp: {identity['timestamp']}")
     if diff_result:
         if not diff_result.get("compatible", False):
-            summary_lines.append("Incompatible: " + "; ".join(diff_result.get("compatibility_reasons", [])))
-        for label, key in (("Added questions", "added_questions"), ("Removed questions", "removed_questions")):
+            summary_lines.append(
+                "Incompatible: " + "; ".join(diff_result.get("compatibility_reasons", []))
+            )
+        for label, key in (
+            ("Added questions", "added_questions"),
+            ("Removed questions", "removed_questions"),
+        ):
             if diff_result.get(key):
                 summary_lines.append(label + ": " + ", ".join(diff_result[key]))
         for change in diff_result.get("changed_questions", []):
@@ -395,7 +434,9 @@ def _run_probe(
     if not include_drafts:
         drafts = sum(q.status == "draft" for q in golden_set.questions)
         if drafts:
-            diagnostics.print(f"Notice: {drafts} draft question(s) excluded. Run longprobe edit to review and approve.")
+            diagnostics.print(
+                f"Notice: {drafts} draft question(s) excluded. Run longprobe edit to review and approve."
+            )
     config = _load_config(config_path)
     if threshold_override is not None:
         config.scoring.recall_threshold = threshold_override
@@ -405,9 +446,17 @@ def _run_probe(
         raise ConfigurationError("top_k must be a positive integer.")
     adapter = _create_adapter_from_config(config)
     store = BaselineStore(config.baseline.db_path)
-    report = evaluate(golden_set, adapter.retrieve, config, store=store,
-                      tags=tags, include_drafts=include_drafts, top_k_override=top_k_override,
-                      baseline_label=baseline_label, compare=compare)
+    report = evaluate(
+        golden_set,
+        adapter.retrieve,
+        config,
+        store=store,
+        tags=tags,
+        include_drafts=include_drafts,
+        top_k_override=top_k_override,
+        baseline_label=baseline_label,
+        compare=compare,
+    )
     return config, adapter, report
 
 
@@ -438,8 +487,7 @@ def init(
     # Create .longprobe directory
     if longprobe_dir.exists():
         console.print(
-            f"[dim]Directory [bold]{longprobe_dir}[/bold] already exists \u2014 "
-            "skipping.[/dim]",
+            f"[dim]Directory [bold]{longprobe_dir}[/bold] already exists \u2014 skipping.[/dim]",
         )
     else:
         longprobe_dir.mkdir(parents=True, exist_ok=True)
@@ -522,16 +570,24 @@ def check(
         "--include-drafts",
         help="Include draft questions in the evaluation run.",
     ),
-    baseline_label: Annotated[str | None, typer.Option("--baseline", "-b", help="Explicit baseline label; must exist.")] = None,
-    compare: Annotated[bool, typer.Option("--compare/--no-compare", help="Enable configured baseline comparison.")] = True,
+    baseline_label: Annotated[
+        str | None, typer.Option("--baseline", "-b", help="Explicit baseline label; must exist.")
+    ] = None,
+    compare: Annotated[
+        bool, typer.Option("--compare/--no-compare", help="Enable configured baseline comparison.")
+    ] = True,
 ) -> None:
     """Run probes against the golden set and report retrieval quality."""
     validate_output(output)
     if baseline_label is not None and not compare:
         raise ConfigurationError("--baseline and --no-compare cannot be combined.")
     cfg, _adapter, report = _run_probe(
-        goldens_path=goldens, config_path=config, top_k_override=top_k,
-        threshold_override=threshold, tags=tag, include_drafts=include_drafts,
+        goldens_path=goldens,
+        config_path=config,
+        top_k_override=top_k,
+        threshold_override=threshold,
+        tags=tag,
+        include_drafts=include_drafts,
         baseline_label=baseline_label,
         compare=compare,
     )
@@ -584,15 +640,22 @@ def baseline_save(
         "--tag",
         help="Only run questions that have this tag (can be specified multiple times).",
     ),
-    output: Annotated[str, typer.Option("--output", "-o", help="Output format: table, json, github.")] = "table",
+    output: Annotated[
+        str, typer.Option("--output", "-o", help="Output format: table, json, github.")
+    ] = "table",
 ) -> None:
     """Run probes strictly on approved questions and persist the report as a named baseline snapshot."""
     validate_output(output)
     if not label.strip():
         raise ConfigurationError("Baseline label must be nonempty.")
     cfg, _adapter, report = _run_probe(
-        goldens_path=goldens, config_path=config, top_k_override=top_k,
-        threshold_override=threshold, tags=tag, include_drafts=False, compare=False,
+        goldens_path=goldens,
+        config_path=config,
+        top_k_override=top_k,
+        threshold_override=threshold,
+        tags=tag,
+        include_drafts=False,
+        compare=False,
     )
     decision = assess_baseline(report)
     report.quality = asdict(decision)
@@ -766,7 +829,12 @@ def diff(
         comparison = DiffReporter().diff(b2, b1)
         report = b2
         report.comparison = asdict(comparison)
-        report.baseline_identity = {"status": "compared" if comparison.compatible else "incompatible", "requested_label": baseline_a, "resolved_label": baseline_a, "timestamp": b1.timestamp}
+        report.baseline_identity = {
+            "status": "compared" if comparison.compatible else "incompatible",
+            "requested_label": baseline_a,
+            "resolved_label": baseline_a,
+            "timestamp": b1.timestamp,
+        }
         report.baseline_recall = b1.overall_recall
         report.recall_delta = comparison.overall_delta
         report.regression_detected = bool(comparison.regressions)
@@ -780,10 +848,17 @@ def diff(
             reasons.append("Baseline comparison is incompatible or unverified.")
         if threshold is not None and report.overall_recall < threshold:
             reasons.append("Target overall recall is below the explicit threshold.")
-        report.quality = {"passed": not reasons, "mode": "evaluation", "failed_questions": failed, "reasons": reasons}
+        report.quality = {
+            "passed": not reasons,
+            "mode": "evaluation",
+            "failed_questions": failed,
+            "reasons": reasons,
+        }
     else:
         target = baseline_a if baseline_a is not None else baseline_label
-        _, _, report = _run_probe(goldens, config, top_k, threshold, tag, include_drafts, baseline_label=target)
+        _, _, report = _run_probe(
+            goldens, config, top_k, threshold, tag, include_drafts, baseline_label=target
+        )
     _display_results(report, output, report.comparison)
     code = report_exit_code(report)
     if code:
@@ -893,8 +968,7 @@ def watch(
             time.sleep(interval)
     except KeyboardInterrupt:
         console.print(
-            f"\n[bold cyan]LongProbe watch stopped.[/bold cyan] "
-            f"(Ran {run_count} time(s))",
+            f"\n[bold cyan]LongProbe watch stopped.[/bold cyan] (Ran {run_count} time(s))",
         )
 
 
@@ -967,12 +1041,16 @@ def capture(
         questions_to_ask.extend(lines)
 
     if not questions_to_ask:
-        console.print("[bold red]Error:[/bold red] No questions provided. Use --question or --questions-file.")
+        console.print(
+            "[bold red]Error:[/bold red] No questions provided. Use --question or --questions-file."
+        )
         raise typer.Exit(1)
 
     check_destination(goldens, overwrite=True)
     if top_k <= 0 or match_mode not in {"id", "text", "semantic"}:
-        raise ConfigurationError("top_k must be positive; match_mode must be id, text, or semantic.")
+        raise ConfigurationError(
+            "top_k must be positive; match_mode must be id, text, or semantic."
+        )
 
     # 2. Load existing golden set or create empty
     if goldens.exists():
@@ -995,7 +1073,9 @@ def capture(
 
     # 4. Iterate over questions
     for q_text in questions_to_ask:
-        console.print(f"\n[bold cyan]🔍 Querying retriever for:[/bold cyan] [italic]\"{q_text}\"[/italic]")
+        console.print(
+            f'\n[bold cyan]🔍 Querying retriever for:[/bold cyan] [italic]"{q_text}"[/italic]'
+        )
         start = time.perf_counter()
         results = adapter.retrieve(q_text, top_k=top_k)
         elapsed = (time.perf_counter() - start) * 1000
@@ -1012,9 +1092,13 @@ def capture(
             # Auto mode: accept all chunks
             for r in results:
                 if match_mode == "id":
-                    approved_chunks.extend([r["id"]] if isinstance(r.get("id"), str) and r["id"].strip() else [])
+                    approved_chunks.extend(
+                        [r["id"]] if isinstance(r.get("id"), str) and r["id"].strip() else []
+                    )
                 else:
-                    approved_chunks.extend([r["text"]] if isinstance(r.get("text"), str) and r["text"].strip() else [])
+                    approved_chunks.extend(
+                        [r["text"]] if isinstance(r.get("text"), str) and r["text"].strip() else []
+                    )
         else:
             # Interactive mode
             skip_question = False
@@ -1034,7 +1118,7 @@ def capture(
                     "   ✅ Include this chunk?",
                     choices=["y", "n", "s", "q"],
                     default="y",
-                    show_choices=True
+                    show_choices=True,
                 )
 
                 if ans == "y":
@@ -1077,15 +1161,21 @@ def capture(
             top_k=top_k,
         )
         new_questions.append(golden_q)
-        console.print(f"   [green]✅ Saved question '{q_id}' ({status_val}) with {len(approved_chunks)} required chunks.[/green]")
+        console.print(
+            f"   [green]✅ Saved question '{q_id}' ({status_val}) with {len(approved_chunks)} required chunks.[/green]"
+        )
 
     # 5. Merge and save
     if new_questions:
         added = golden_set.merge(new_questions)
         golden_set.to_yaml(str(goldens))
-        console.print(f"\n[bold green]Successfully added {added} new question(s) to {goldens}[/bold green]")
+        console.print(
+            f"\n[bold green]Successfully added {added} new question(s) to {goldens}[/bold green]"
+        )
         if any(q.status == "draft" for q in new_questions):
-            console.print("[dim]💡 Hint: Draft questions are excluded from CI checks by default. Run [cyan]longprobe edit[/cyan] to approve, or [cyan]longprobe check --include-drafts[/cyan] to test.[/dim]")
+            console.print(
+                "[dim]💡 Hint: Draft questions are excluded from CI checks by default. Run [cyan]longprobe edit[/cyan] to approve, or [cyan]longprobe check --include-drafts[/cyan] to test.[/dim]"
+            )
     else:
         console.print("\n[dim]No new questions were captured.[/dim]")
 
@@ -1163,11 +1253,19 @@ def generate(
         "--id-prefix",
         help="Prefix for auto-generated question IDs.",
     ),
-    overwrite: Annotated[bool, typer.Option("--overwrite", help="Replace an existing question-list --output file; not valid with --auto-capture.")] = False,
+    overwrite: Annotated[
+        bool,
+        typer.Option(
+            "--overwrite",
+            help="Replace an existing question-list --output file; not valid with --auto-capture.",
+        ),
+    ] = False,
 ) -> None:
     """Generate golden questions from documents using an LLM."""
     if (auto_capture and output is not None) or (overwrite and (output is None or auto_capture)):
-        raise ConfigurationError("Use --overwrite only with --output; --output and --auto-capture are separate modes.")
+        raise ConfigurationError(
+            "Use --overwrite only with --output; --output and --auto-capture are separate modes."
+        )
 
     # 1. Load config
     cfg = _load_config(config)
@@ -1216,7 +1314,9 @@ def generate(
         try:
             check_destination(output, overwrite=overwrite)
         except FileExistsError:
-            raise ConfigurationError("Output exists; use --overwrite to replace it or choose a new --output path.") from None
+            raise ConfigurationError(
+                "Output exists; use --overwrite to replace it or choose a new --output path."
+            ) from None
 
     # 3. Parse documents.
     with Progress(
@@ -1263,9 +1363,7 @@ def generate(
         raise typer.Exit(1)
 
     if not questions:
-        console.print(
-            "[bold yellow]Warning:[/bold yellow] LLM did not generate any questions."
-        )
+        console.print("[bold yellow]Warning:[/bold yellow] LLM did not generate any questions.")
         raise typer.Exit(0)
 
     # 5. Output or auto-capture.
@@ -1284,9 +1382,7 @@ def generate(
         try:
             adapter = _create_adapter_from_config(cfg)
         except Exception as exc:
-            console.print(
-                f"[bold red]Error:[/bold red] Failed to create retriever adapter: {exc}"
-            )
+            console.print(f"[bold red]Error:[/bold red] Failed to create retriever adapter: {exc}")
             raise typer.Exit(1)
 
         # The destination has already passed preflight before generation.
@@ -1304,20 +1400,20 @@ def generate(
 
         for q_text in questions:
             console.print(
-                f"  [dim]\U0001f50d[/dim] [italic]\"{q_text[:60]}{'...' if len(q_text) > 60 else ''}\"[/italic]"
+                f'  [dim]\U0001f50d[/dim] [italic]"{q_text[:60]}{"..." if len(q_text) > 60 else ""}"[/italic]'
             )
             try:
                 start = time.perf_counter()
                 results = adapter.retrieve(q_text, top_k=top_k)
                 elapsed = (time.perf_counter() - start) * 1000
             except Exception:
-                console.print("    Retriever request failed; check connection and credentials. Skipping.")
+                console.print(
+                    "    Retriever request failed; check connection and credentials. Skipping."
+                )
                 skipped += 1
                 continue
 
-            console.print(
-                f"    [dim]Retrieved {len(results)} chunks in {elapsed:.0f}ms[/dim]"
-            )
+            console.print(f"    [dim]Retrieved {len(results)} chunks in {elapsed:.0f}ms[/dim]")
 
             if not results:
                 console.print("    [yellow]No results. Skipping.[/yellow]")
@@ -1328,9 +1424,13 @@ def generate(
             approved_chunks: list[str] = []
             for r in results:
                 if match_mode == "id":
-                    approved_chunks.extend([r["id"]] if isinstance(r.get("id"), str) and r["id"].strip() else [])
+                    approved_chunks.extend(
+                        [r["id"]] if isinstance(r.get("id"), str) and r["id"].strip() else []
+                    )
                 else:
-                    approved_chunks.extend([r["text"]] if isinstance(r.get("text"), str) and r["text"].strip() else [])
+                    approved_chunks.extend(
+                        [r["text"]] if isinstance(r.get("text"), str) and r["text"].strip() else []
+                    )
 
             if not approved_chunks:
                 skipped += 1
@@ -1356,14 +1456,14 @@ def generate(
             try:
                 golden_set.to_yaml(str(goldens))
             except OSError as exc:
-                console.print(
-                    f"[bold red]Error:[/bold red] Failed to write golden set: {exc}"
-                )
+                console.print(f"[bold red]Error:[/bold red] Failed to write golden set: {exc}")
                 raise typer.Exit(1)
 
         captured_count = len(new_questions)
         if not captured_count:
-            console.print(f"No valid new questions captured; existing goldens were unchanged. Skipped: {skipped}")
+            console.print(
+                f"No valid new questions captured; existing goldens were unchanged. Skipped: {skipped}"
+            )
             return
         console.print(
             Panel(
@@ -1390,7 +1490,9 @@ def generate(
                 "model": gen_config.model,
             },
         }
-        content = _yaml.safe_dump(data, default_flow_style=False, sort_keys=False, allow_unicode=True)
+        content = _yaml.safe_dump(
+            data, default_flow_style=False, sort_keys=False, allow_unicode=True
+        )
         atomic_write_text(output, content, overwrite=overwrite)
         console.print(
             Panel(
@@ -1625,7 +1727,9 @@ def explain(
 
     target_res = next((r for r in report.results if r.question_id == question_id), None)
     if target_res is None:
-        console.print(f"[bold red]Error:[/bold red] Question ID '{question_id}' not found in evaluated report.")
+        console.print(
+            f"[bold red]Error:[/bold red] Question ID '{question_id}' not found in evaluated report."
+        )
         raise typer.Exit(1)
 
     explanation = explain_failure(target_res)

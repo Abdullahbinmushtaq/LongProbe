@@ -96,22 +96,29 @@ class LongProbe:
             self.config.scoring.recall_threshold = recall_threshold
         self.config.validate_for("evaluate", owns_retriever=False)
 
-        self.scorer = RecallScorer(
-            recall_threshold=self.config.scoring.recall_threshold
-        )
-        self.baseline_store = BaselineStore(
-            db_path=self.config.baseline.db_path
-        )
+        self.scorer = RecallScorer(recall_threshold=self.config.scoring.recall_threshold)
+        self.baseline_store = BaselineStore(db_path=self.config.baseline.db_path)
         self.diff_reporter = DiffReporter()
         self._last_report: ProbeReport | None = None
 
-    def run(self, top_k_override: int | None = None, *, baseline_label: str | None = None, tags: list[str] | None = None) -> ProbeReport:
+    def run(
+        self,
+        top_k_override: int | None = None,
+        *,
+        baseline_label: str | None = None,
+        tags: list[str] | None = None,
+    ) -> ProbeReport:
         """Evaluate with shared rules; retain a defensive baseline candidate."""
         self._last_report = None
         report = evaluate(
-            self.golden_set, self.adapter.retrieve, self.config,
-            store=self.baseline_store, tags=tags, include_drafts=self.include_drafts,
-            top_k_override=top_k_override, baseline_label=baseline_label,
+            self.golden_set,
+            self.adapter.retrieve,
+            self.config,
+            store=self.baseline_store,
+            tags=tags,
+            include_drafts=self.include_drafts,
+            top_k_override=top_k_override,
+            baseline_label=baseline_label,
         )
         self._last_report = deepcopy(report)
         return report
@@ -138,7 +145,5 @@ class LongProbe:
         if self._last_report is None:
             raise RuntimeError("No report available. Run probe.run() first.")
         return {
-            r.question_id: r.missing_chunks
-            for r in self._last_report.results
-            if r.missing_chunks
+            r.question_id: r.missing_chunks for r in self._last_report.results if r.missing_chunks
         }

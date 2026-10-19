@@ -20,12 +20,24 @@ _REPORT_KEY: pytest.StashKey[ProbeReport] = pytest.StashKey()
 
 def pytest_addoption(parser: pytest.Parser) -> None:
     group = parser.getgroup("longprobe")
-    group.addoption("--longprobe-goldens", default="goldens.yaml", help="Golden questions YAML path.")
-    group.addoption("--longprobe-config", default="longprobe.yaml", help="LongProbe configuration YAML path.")
-    group.addoption("--longprobe-fail-threshold", type=float, default=None,
-                    help="Run LongProbe and enforce per-question passing with this global threshold; explicit question thresholds take precedence.")
-    group.addoption("--longprobe-include-drafts", action="store_true", default=False,
-                    help="Include drafts in pytest analysis (not baseline promotion).")
+    group.addoption(
+        "--longprobe-goldens", default="goldens.yaml", help="Golden questions YAML path."
+    )
+    group.addoption(
+        "--longprobe-config", default="longprobe.yaml", help="LongProbe configuration YAML path."
+    )
+    group.addoption(
+        "--longprobe-fail-threshold",
+        type=float,
+        default=None,
+        help="Run LongProbe and enforce per-question passing with this global threshold; explicit question thresholds take precedence.",
+    )
+    group.addoption(
+        "--longprobe-include-drafts",
+        action="store_true",
+        default=False,
+        help="Include drafts in pytest analysis (not baseline promotion).",
+    )
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -64,16 +76,25 @@ def longprobe_adapter(longprobe_config_path: str):
 
 
 @pytest.fixture(scope="session")
-def longprobe_probe(longprobe_adapter, longprobe_goldens_path: str, longprobe_config_path: str,
-                    longprobe_include_drafts: bool, longprobe_fail_threshold: float | None):
+def longprobe_probe(
+    longprobe_adapter,
+    longprobe_goldens_path: str,
+    longprobe_config_path: str,
+    longprobe_include_drafts: bool,
+    longprobe_fail_threshold: float | None,
+):
     from longprobe import LongProbe
     from longprobe.config import ProbeConfig
 
     # A selected pytest path is required even for a custom application adapter.
     ProbeConfig.from_yaml(longprobe_config_path)
-    return LongProbe(adapter=longprobe_adapter, goldens_path=longprobe_goldens_path,
-                     config_path=longprobe_config_path, include_drafts=longprobe_include_drafts,
-                     recall_threshold=longprobe_fail_threshold)
+    return LongProbe(
+        adapter=longprobe_adapter,
+        goldens_path=longprobe_goldens_path,
+        config_path=longprobe_config_path,
+        include_drafts=longprobe_include_drafts,
+        recall_threshold=longprobe_fail_threshold,
+    )
 
 
 @pytest.fixture(scope="session")
@@ -90,7 +111,9 @@ def _longprobe_enforce(request: pytest.FixtureRequest):
         return
     report = request.getfixturevalue("longprobe_report")
     if not report.quality["passed"]:
-        pytest.fail("LongProbe quality gate failed: " + "; ".join(report.quality["reasons"]), pytrace=False)
+        pytest.fail(
+            "LongProbe quality gate failed: " + "; ".join(report.quality["reasons"]), pytrace=False
+        )
 
 
 def pytest_terminal_summary(terminalreporter, exitstatus: int, config: pytest.Config) -> None:
@@ -98,8 +121,14 @@ def pytest_terminal_summary(terminalreporter, exitstatus: int, config: pytest.Co
     if report is None:
         return
     terminalreporter.write_sep("=", "LongProbe Results")
-    terminalreporter.write_line(f"Overall recall: {report.overall_recall:.2%}; pass rate: {report.pass_rate:.2%}")
+    terminalreporter.write_line(
+        f"Overall recall: {report.overall_recall:.2%}; pass rate: {report.pass_rate:.2%}"
+    )
     identity = report.baseline_identity
-    terminalreporter.write_line(f"Baseline: {identity.get('resolved_label') or identity.get('requested_label') or 'none'}; comparison: {identity.get('status', 'not_requested')}")
+    terminalreporter.write_line(
+        f"Baseline: {identity.get('resolved_label') or identity.get('requested_label') or 'none'}; comparison: {identity.get('status', 'not_requested')}"
+    )
     for result in report.results:
-        terminalreporter.write_line(f"{result.question_id}: {'PASS' if result.passed else 'FAIL'}; missing: {', '.join(result.missing_chunks) or 'none'}")
+        terminalreporter.write_line(
+            f"{result.question_id}: {'PASS' if result.passed else 'FAIL'}; missing: {', '.join(result.missing_chunks) or 'none'}"
+        )

@@ -77,8 +77,8 @@ class ProbeReport:
         baseline_recall: Previously recorded recall value (if available)
             used to detect regressions.
         recall_delta: Difference between current and baseline recall.
-        regression_detected: Whether a statistically meaningful regression
-            was observed (``recall_delta`` is negative).
+        regression_detected: Whether required evidence regressed against the
+            selected reference, including equal-recall evidence loss.
     """
 
     golden_set_name: str
@@ -116,16 +116,31 @@ class RecallScorer:
             considered *passed*.
     """
 
-    def __init__(self, recall_threshold: float = 0.8, question_thresholds: dict[str, float] | None = None) -> None:
-        if isinstance(recall_threshold, bool) or not isinstance(recall_threshold, (int, float)) or not math.isfinite(recall_threshold) or not 0.0 <= recall_threshold <= 1.0:
+    def __init__(
+        self, recall_threshold: float = 0.8, question_thresholds: dict[str, float] | None = None
+    ) -> None:
+        if (
+            isinstance(recall_threshold, bool)
+            or not isinstance(recall_threshold, (int, float))
+            or not math.isfinite(recall_threshold)
+            or not 0.0 <= recall_threshold <= 1.0
+        ):
             raise ValueError(
-                f"recall_threshold must be between 0.0 and 1.0, "
-                f"got {recall_threshold}"
+                f"recall_threshold must be between 0.0 and 1.0, got {recall_threshold}"
             )
         self.recall_threshold = recall_threshold
         self.question_thresholds = dict(question_thresholds or {})
-        if any(not isinstance(k, str) or isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) or not 0 <= v <= 1 for k, v in self.question_thresholds.items()):
-            raise ValueError("question_thresholds must map question IDs to finite thresholds in [0, 1].")
+        if any(
+            not isinstance(k, str)
+            or isinstance(v, bool)
+            or not isinstance(v, (int, float))
+            or not math.isfinite(v)
+            or not 0 <= v <= 1
+            for k, v in self.question_thresholds.items()
+        ):
+            raise ValueError(
+                "question_thresholds must map question IDs to finite thresholds in [0, 1]."
+            )
 
     # ------------------------------------------------------------------
     # Public API
@@ -163,8 +178,7 @@ class RecallScorer:
             )
         else:
             raise ValueError(
-                f"Unsupported match_mode '{match_mode}'. "
-                f"Expected 'id', 'text', or 'semantic'."
+                f"Unsupported match_mode '{match_mode}'. Expected 'id', 'text', or 'semantic'."
             )
 
         # Compute recall with division-by-zero guard.
@@ -223,7 +237,9 @@ class RecallScorer:
             elapsed = time.perf_counter() - start
 
             result = self.score(question, retrieved_docs)
-            result.contract = question_contract(question, top_k, self.question_thresholds.get(question.id, self.recall_threshold))
+            result.contract = question_contract(
+                question, top_k, self.question_thresholds.get(question.id, self.recall_threshold)
+            )
             result.latency_ms = elapsed * 1000.0
             results.append(result)
 

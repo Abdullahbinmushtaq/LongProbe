@@ -38,7 +38,9 @@ def question_contract(question: GoldenQuestion, top_k: int, threshold: float) ->
         "question": question.question,
         "required_chunks": sorted(question.required_chunks),
         "match_mode": question.match_mode,
-        "semantic_threshold": question.semantic_threshold if question.match_mode == "semantic" else None,
+        "semantic_threshold": question.semantic_threshold
+        if question.match_mode == "semantic"
+        else None,
         "top_k": top_k,
         "recall_threshold": threshold,
         "matcher_version": MATCHER_VERSION,
@@ -86,7 +88,9 @@ def report_from_dict(data: dict) -> ProbeReport:
                 question_id=qid,
                 question=raw["question"],
                 recall_score=_number(raw["recall_score"], "recall_score"),
-                retrieved_chunk_ids=_strings(raw.get("retrieved_chunk_ids", []), "retrieved_chunk_ids"),
+                retrieved_chunk_ids=_strings(
+                    raw.get("retrieved_chunk_ids", []), "retrieved_chunk_ids"
+                ),
                 required_chunks=_strings(raw["required_chunks"], "required_chunks"),
                 missing_chunks=_strings(raw["missing_chunks"], "missing_chunks"),
                 found_chunks=_strings(raw["found_chunks"], "found_chunks"),
@@ -102,11 +106,15 @@ def report_from_dict(data: dict) -> ProbeReport:
             if not isinstance(item, str) or not item.strip():
                 raise ReportError("Report suite identity and timestamp must be nonempty strings.")
         report = ProbeReport(
-            golden_set_name=name, golden_set_version=data["golden_set_version"],
-            timestamp=data["timestamp"], results=results,
+            golden_set_name=name,
+            golden_set_version=data["golden_set_version"],
+            timestamp=data["timestamp"],
+            results=results,
             overall_recall=_number(data["overall_recall"], "overall_recall"),
             pass_rate=_number(data["pass_rate"], "pass_rate"),
-            baseline_recall=None if data.get("baseline_recall") is None else _number(data["baseline_recall"], "baseline_recall"),
+            baseline_recall=None
+            if data.get("baseline_recall") is None
+            else _number(data["baseline_recall"], "baseline_recall"),
             recall_delta=data.get("recall_delta"),
             regression_detected=data.get("regression_detected", False),
             schema_version=version,
@@ -120,23 +128,41 @@ def report_from_dict(data: dict) -> ProbeReport:
         if report.comparison is not None and not isinstance(report.comparison, dict):
             raise ReportError("Report comparison must be an object.")
         if report.quality:
-            if type(report.quality.get("passed")) is not bool or report.quality.get("mode") not in {"evaluation", "all_questions", "aggregate"}:
+            if type(report.quality.get("passed")) is not bool or report.quality.get("mode") not in {
+                "evaluation",
+                "all_questions",
+                "aggregate",
+            }:
                 raise ReportError("Report quality decision is invalid.")
             _strings(report.quality.get("failed_questions"), "quality.failed_questions")
             _strings(report.quality.get("reasons"), "quality.reasons")
-            if report.quality["passed"] and report.quality["mode"] in {"evaluation", "all_questions"} and any(not r.passed for r in results):
+            if (
+                report.quality["passed"]
+                and report.quality["mode"] in {"evaluation", "all_questions"}
+                and any(not r.passed for r in results)
+            ):
                 raise ReportError("Report passing verdict contradicts failed questions.")
         if report.comparison is not None:
             comparison = report.comparison
             if type(comparison.get("compatible")) is not bool:
                 raise ReportError("Report comparison compatibility is invalid.")
-            for key in ("compatibility_reasons", "added_questions", "removed_questions", "unchanged"):
+            for key in (
+                "compatibility_reasons",
+                "added_questions",
+                "removed_questions",
+                "unchanged",
+            ):
                 _strings(comparison.get(key), f"comparison.{key}")
             for key in ("regressions", "improvements", "changed_questions", "evidence_changes"):
-                if not isinstance(comparison.get(key), list) or any(not isinstance(item, dict) for item in comparison[key]):
+                if not isinstance(comparison.get(key), list) or any(
+                    not isinstance(item, dict) for item in comparison[key]
+                ):
                     raise ReportError("Report comparison changes must be lists of objects.")
                 for item in comparison[key]:
-                    if not isinstance(item.get("question_id"), str) or not item["question_id"].strip():
+                    if (
+                        not isinstance(item.get("question_id"), str)
+                        or not item["question_id"].strip()
+                    ):
                         raise ReportError("Report comparison changes require question IDs.")
                     if key in {"regressions", "improvements"}:
                         _number(item.get("baseline_recall"), "comparison.baseline_recall")
@@ -149,16 +175,32 @@ def report_from_dict(data: dict) -> ProbeReport:
                         _strings(item.get("fields"), "comparison.fields")
             delta = comparison.get("overall_delta")
             if not comparison["compatible"] and delta is not None:
-                raise ReportError("Incompatible comparisons cannot carry a comparable overall delta.")
-            if delta is not None and (isinstance(delta, bool) or not isinstance(delta, (float, int)) or not math.isfinite(delta) or abs(delta) > 1):
+                raise ReportError(
+                    "Incompatible comparisons cannot carry a comparable overall delta."
+                )
+            if delta is not None and (
+                isinstance(delta, bool)
+                or not isinstance(delta, (float, int))
+                or not math.isfinite(delta)
+                or abs(delta) > 1
+            ):
                 raise ReportError("Report comparison delta is invalid.")
-            if report.quality.get("passed") and report.quality.get("mode") == "evaluation" and (not comparison["compatible"] or comparison["regressions"]):
+            if (
+                report.quality.get("passed")
+                and report.quality.get("mode") == "evaluation"
+                and (not comparison["compatible"] or comparison["regressions"])
+            ):
                 raise ReportError("Report passing verdict contradicts comparison failures.")
         if type(report.regression_detected) is not bool:
             raise ReportError("Report regression flag must be a boolean.")
         if report.recall_delta is not None:
             delta = report.recall_delta
-            if isinstance(delta, bool) or not isinstance(delta, (int, float)) or not math.isfinite(delta) or abs(delta) > 1:
+            if (
+                isinstance(delta, bool)
+                or not isinstance(delta, (int, float))
+                or not math.isfinite(delta)
+                or abs(delta) > 1
+            ):
                 raise ReportError("Report recall_delta must be a finite difference in [-1, 1].")
         if version == SCHEMA_VERSION:
             if report.policy.get("mode") not in {"all_questions", "aggregate"}:
@@ -177,11 +219,19 @@ def _validate_contract(result: QuestionResult) -> None:
     contract = result.contract
     if not isinstance(contract, dict) or contract.get("fingerprint") != fingerprint(contract):
         raise ReportError("Report evaluation contract is missing or has an invalid fingerprint.")
-    if contract.get("question") != result.question or contract.get("required_chunks") != sorted(result.required_chunks):
+    if contract.get("question") != result.question or contract.get("required_chunks") != sorted(
+        result.required_chunks
+    ):
         raise ReportError("Report contract disagrees with the evaluated question.")
-    if contract.get("match_mode") not in {"id", "text", "semantic"} or not isinstance(contract.get("matcher_version"), str):
+    if contract.get("match_mode") not in {"id", "text", "semantic"} or not isinstance(
+        contract.get("matcher_version"), str
+    ):
         raise ReportError("Report matching contract is invalid.")
-    if type(contract.get("top_k")) is not int or contract["top_k"] <= 0 or contract.get("status") not in {"draft", "approved"}:
+    if (
+        type(contract.get("top_k")) is not int
+        or contract["top_k"] <= 0
+        or contract.get("status") not in {"draft", "approved"}
+    ):
         raise ReportError("Report retrieval limit or question status is invalid.")
     threshold = _number(contract["recall_threshold"], "contract.recall_threshold")
     if contract["match_mode"] == "semantic":
@@ -191,8 +241,12 @@ def _validate_contract(result: QuestionResult) -> None:
     if not required or found - required or required - found != missing:
         raise ReportError("Report required, found, and missing evidence are inconsistent.")
     expected = len(result.found_chunks) / len(result.required_chunks)
-    if abs(expected - result.recall_score) > 1e-9 or result.passed != (result.recall_score >= threshold):
-        raise ReportError("Report score or passing status disagrees with recorded evidence and threshold.")
+    if abs(expected - result.recall_score) > 1e-9 or result.passed != (
+        result.recall_score >= threshold
+    ):
+        raise ReportError(
+            "Report score or passing status disagrees with recorded evidence and threshold."
+        )
 
 
 def report_to_dict(report: ProbeReport) -> dict:

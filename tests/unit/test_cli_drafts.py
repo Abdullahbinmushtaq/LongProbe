@@ -54,13 +54,17 @@ def test_check_excludes_drafts_by_default(tmp_path: Path, monkeypatch, capsys):
     )
 
     captured = capsys.readouterr()
-    assert "Notice: 1 draft question(s) excluded" in captured.out or "Notice: 1 draft question(s) excluded" in captured.err
+    assert (
+        "Notice: 1 draft question(s) excluded" in captured.out
+        or "Notice: 1 draft question(s) excluded" in captured.err
+    )
 
 
 def test_check_includes_drafts_with_flag(tmp_path: Path, monkeypatch):
     goldens_path, config_path, _ = _setup_draft_test_files(tmp_path)
 
     calls = []
+
     def mock_retrieve(q, top_k=5):
         calls.append(q)
         return [{"id": "chunk-1"}]
@@ -113,6 +117,7 @@ def test_diff_live_run_supports_include_drafts(tmp_path: Path, monkeypatch):
     store.save(dummy_report, label="latest")
 
     calls = []
+
     def mock_retrieve(q, top_k=5):
         calls.append(q)
         return [{"id": "chunk-1"}]

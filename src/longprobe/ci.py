@@ -16,6 +16,7 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+from contextlib import closing
 from pathlib import Path
 
 from .cli.output import escape_annotation, github_annotations
@@ -27,42 +28,68 @@ from .core.reporting import ReportError, read_report, report_from_dict
 
 def validate_baseline_inputs(artifact: str, run_id: str, label: str) -> None:
     if bool(artifact) != bool(run_id):
-        raise ConfigurationError("Baseline artifact name and source run ID must be supplied together.")
+        raise ConfigurationError(
+            "Baseline artifact name and source run ID must be supplied together."
+        )
     if artifact and (not re.fullmatch(r"[1-9][0-9]*", run_id) or not label.strip()):
-        raise ConfigurationError("Baseline source run must be a positive integer and label must be nonempty.")
+        raise ConfigurationError(
+            "Baseline source run must be a positive integer and label must be nonempty."
+        )
 
 
-def restore_baseline(artifact_dir: Path, destination: Path, config_path: Path, goldens_path: Path, label: str) -> None:
+def restore_baseline(
+    artifact_dir: Path, destination: Path, config_path: Path, goldens_path: Path, label: str
+) -> None:
     """Validate an existing artifact read-only before replacing any destination."""
     from .core.golden import GoldenSet
 
     config = ProbeConfig.from_yaml(str(config_path))
     config.validate_for("baseline")
     if destination.resolve() != Path(config.baseline.db_path).resolve():
-        raise ConfigurationError("Restored baseline path must match baseline.db_path in the selected configuration.")
+        raise ConfigurationError(
+            "Restored baseline path must match baseline.db_path in the selected configuration."
+        )
     candidates = list(artifact_dir.rglob("*.db"))
     if len(candidates) != 1 or candidates[0].is_symlink() or not candidates[0].is_file():
-        raise ConfigurationError("Baseline artifact must contain exactly one regular SQLite .db file.")
+        raise ConfigurationError(
+            "Baseline artifact must contain exactly one regular SQLite .db file."
+        )
     source = candidates[0]
     if not source.resolve().is_relative_to(artifact_dir.resolve()) or destination.is_symlink():
         raise ConfigurationError("Baseline artifact and destination must use regular local paths.")
-    if any(Path(str(path) + suffix).exists() for path in (source, destination) for suffix in ("-wal", "-shm", "-journal")):
-        raise ConfigurationError("Use a closed standalone baseline database without journal sidecars.")
+    if any(
+        Path(str(path) + suffix).exists()
+        for path in (source, destination)
+        for suffix in ("-wal", "-shm", "-journal")
+    ):
+        raise ConfigurationError(
+            "Use a closed standalone baseline database without journal sidecars."
+        )
     try:
-        with sqlite3.connect(source.resolve().as_uri() + "?mode=ro", uri=True) as conn:
+        with closing(sqlite3.connect(source.resolve().as_uri() + "?mode=ro", uri=True)) as conn:
             if conn.execute("PRAGMA quick_check").fetchone()[0] != "ok":
                 raise ConfigurationError("Baseline artifact database failed integrity validation.")
-            row = conn.execute("SELECT report_json FROM baselines WHERE label = ?", (label,)).fetchone()
+            row = conn.execute(
+                "SELECT report_json FROM baselines WHERE label = ?", (label,)
+            ).fetchone()
         if row is None:
-            raise ConfigurationError("Requested baseline label is absent from the restored artifact.")
+            raise ConfigurationError(
+                "Requested baseline label is absent from the restored artifact."
+            )
         baseline = report_from_dict(json.loads(row[0]))
     except (sqlite3.Error, json.JSONDecodeError):
-        raise ConfigurationError("Baseline artifact does not contain a valid LongProbe database.") from None
+        raise ConfigurationError(
+            "Baseline artifact does not contain a valid LongProbe database."
+        ) from None
     # Build a contract preview using a local empty-result callable, never a service.
-    preview = evaluate(GoldenSet.from_yaml(str(goldens_path)), lambda query, k: [], config, compare=False)
+    preview = evaluate(
+        GoldenSet.from_yaml(str(goldens_path)), lambda query, k: [], config, compare=False
+    )
     comparison = DiffReporter().diff(preview, baseline)
     if not comparison.compatible:
-        raise ConfigurationError("Restored baseline is incompatible: " + "; ".join(comparison.compatibility_reasons))
+        raise ConfigurationError(
+            "Restored baseline is incompatible: " + "; ".join(comparison.compatibility_reasons)
+        )
     destination.parent.mkdir(parents=True, exist_ok=True)
     descriptor, temporary = tempfile.mkstemp(dir=destination.parent, prefix=".baseline-")
     os.close(descriptor)
@@ -101,52 +128,98 @@ def markdown_report(report) -> str:
     """Human feedback uses the recorded verdict rather than guessed defaults."""
     identity = report.baseline_identity
     comparison = report.comparison or {}
-    lines = ["<!-- longprobe-report -->", "## LongProbe RAG Regression Report", "",
-             f"Quality: **{'PASS' if report.quality.get('passed') else 'FAIL'}**", "",
-             "| Metric | Value |", "|---|---|",
-             f"| Recall | {report.overall_recall:.1%} |",
-             f"| Passing questions | {sum(r.passed for r in report.results)}/{len(report.results)} |",
-             f"| Baseline | {_markdown(identity.get('resolved_label') or identity.get('requested_label') or 'none')} |",
-             f"| Comparison | {_markdown(identity.get('status', 'not_requested'))} |", ""]
+    lines = [
+        "<!-- longprobe-report -->",
+        "## LongProbe RAG Regression Report",
+        "",
+        f"Quality: **{'PASS' if report.quality.get('passed') else 'FAIL'}**",
+        "",
+        "| Metric | Value |",
+        "|---|---|",
+        f"| Recall | {report.overall_recall:.1%} |",
+        f"| Passing questions | {sum(r.passed for r in report.results)}/{len(report.results)} |",
+        f"| Baseline | {_markdown(identity.get('resolved_label') or identity.get('requested_label') or 'none')} |",
+        f"| Comparison | {_markdown(identity.get('status', 'not_requested'))} |",
+        "",
+    ]
     for reason in report.quality.get("reasons", []):
         lines.append("- " + _markdown(reason))
-    for label, key in (("Added questions", "added_questions"), ("Removed questions", "removed_questions")):
+    for label, key in (
+        ("Added questions", "added_questions"),
+        ("Removed questions", "removed_questions"),
+    ):
         if comparison.get(key):
             lines.append(f"- {label}: " + ", ".join(_markdown(q) for q in comparison[key]))
     for change in comparison.get("changed_questions", []):
-        lines.append(f"- Changed {_markdown(change['question_id'])}: " + ", ".join(_markdown(f) for f in change["fields"]))
+        lines.append(
+            f"- Changed {_markdown(change['question_id'])}: "
+            + ", ".join(_markdown(f) for f in change["fields"])
+        )
     for regression in comparison.get("regressions", []):
-        lines.append(f"- Regression {_markdown(regression['question_id'])}: lost " + ", ".join(_markdown(c) for c in regression["newly_lost_chunks"]))
+        lines.append(
+            f"- Regression {_markdown(regression['question_id'])}: lost "
+            + ", ".join(_markdown(c) for c in regression["newly_lost_chunks"])
+        )
     for result in report.results:
         if result.missing_chunks:
-            lines.append(f"- {_markdown(result.question_id)} missing: " + ", ".join(_markdown(c) for c in result.missing_chunks))
+            lines.append(
+                f"- {_markdown(result.question_id)} missing: "
+                + ", ".join(_markdown(c) for c in result.missing_chunks)
+            )
     text = "\n".join(lines) + "\n"
-    return text[:59000] + ("\n\nReport truncated; inspect the JSON artifact.\n" if len(text) > 59000 else "")
+    return text[:59000] + (
+        "\n\nReport truncated; inspect the JSON artifact.\n" if len(text) > 59000 else ""
+    )
 
 
-def run_evaluation(config: Path, goldens: Path, *, label: str | None = None, blocking: bool = True, directory: Path = Path(".")) -> int:
+def run_evaluation(
+    config: Path,
+    goldens: Path,
+    *,
+    label: str | None = None,
+    blocking: bool = True,
+    directory: Path = Path("."),
+) -> int:
     directory.mkdir(parents=True, exist_ok=True)
     report_path = directory / "longprobe-result.json"
     error_path = directory / "longprobe-diagnostics.txt"
-    command = [sys.executable, "-m", "longprobe.cli.main", "check", "--config", str(config), "--goldens", str(goldens), "--output", "json"]
+    command = [
+        sys.executable,
+        "-m",
+        "longprobe.cli.main",
+        "check",
+        "--config",
+        str(config),
+        "--goldens",
+        str(goldens),
+        "--output",
+        "json",
+    ]
     if label is not None:
         command += ["--baseline", label]
     else:
         command += ["--no-compare"]
-    with report_path.open("w", encoding="utf-8") as stdout, error_path.open("w", encoding="utf-8") as stderr:
+    with (
+        report_path.open("w", encoding="utf-8") as stdout,
+        error_path.open("w", encoding="utf-8") as stderr,
+    ):
         result = subprocess.run(command, stdout=stdout, stderr=stderr, check=False)
     code = determine_exit(report_path, result.returncode, blocking)
     has_result = False
     try:
         report = read_report(report_path)
-        has_result = report.schema_version == 2 and bool(report.quality) and result.returncode in {0, 1}
+        has_result = (
+            report.schema_version == 2 and bool(report.quality) and result.returncode in {0, 1}
+        )
     except (ValueError, OSError):
         report = None
     if has_result:
         print(github_annotations(report))
         (directory / "longprobe-comment.md").write_text(markdown_report(report), encoding="utf-8")
     else:
-        print("::error title=LongProbe Execution::Evaluation did not produce a valid report; inspect diagnostics.")
+        print(
+            "::error title=LongProbe Execution::Evaluation did not produce a valid report; inspect diagnostics."
+        )
     if output_path := os.environ.get("GITHUB_OUTPUT"):
         with open(output_path, "a", encoding="utf-8") as output:
             output.write(f"has-result={'true' if has_result else 'false'}\nexit-code={code}\n")
@@ -177,16 +250,26 @@ def main() -> int:
         if args.command == "validate-inputs":
             validate_baseline_inputs(args.artifact, args.run_id, args.label)
         elif args.command == "restore":
-            restore_baseline(args.artifact_dir, args.destination, args.config, args.goldens, args.label)
+            restore_baseline(
+                args.artifact_dir, args.destination, args.config, args.goldens, args.label
+            )
         else:
-            code = run_evaluation(args.config, args.goldens, label=args.baseline, blocking=not args.nonblocking, directory=args.directory)
+            code = run_evaluation(
+                args.config,
+                args.goldens,
+                label=args.baseline,
+                blocking=not args.nonblocking,
+                directory=args.directory,
+            )
             # The workflow performs its final gate after uploads/comments.
             return 0 if os.environ.get("GITHUB_OUTPUT") else code
     except (ConfigurationError, ReportError, ValueError) as exc:
         print("::error title=LongProbe Setup::" + escape_annotation(str(exc)), file=sys.stderr)
         return 2
     except (OSError, sqlite3.Error):
-        print("::error title=LongProbe Execution::File or database operation failed.", file=sys.stderr)
+        print(
+            "::error title=LongProbe Execution::File or database operation failed.", file=sys.stderr
+        )
         return 3
     return 0
 

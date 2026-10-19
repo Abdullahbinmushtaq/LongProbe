@@ -148,14 +148,21 @@ class DiffReporter:
             reasons.append("Legacy report metadata is missing; compatibility is unverified.")
         if not current.results or not baseline.results:
             reasons.append("An empty report cannot establish a comparison.")
-        if (current.golden_set_name, current.golden_set_version) != (baseline.golden_set_name, baseline.golden_set_version):
+        if (current.golden_set_name, current.golden_set_version) != (
+            baseline.golden_set_name,
+            baseline.golden_set_version,
+        ):
             reasons.append("Golden set name or version changed.")
         if result.added_questions or result.removed_questions:
             reasons.append("Evaluated question coverage changed.")
         for qid in sorted(current_map.keys() & baseline_map.keys()):
             cur, base = current_map[qid], baseline_map[qid]
             if cur.contract is not None and base.contract is not None:
-                fields = sorted(k for k in cur.contract.keys() | base.contract.keys() if k != "fingerprint" and cur.contract.get(k) != base.contract.get(k))
+                fields = sorted(
+                    k
+                    for k in cur.contract.keys() | base.contract.keys()
+                    if k != "fingerprint" and cur.contract.get(k) != base.contract.get(k)
+                )
             else:
                 fields = []
                 if cur.question != base.question:
@@ -168,17 +175,25 @@ class DiffReporter:
             lost = sorted(set(base.found_chunks) - set(cur.found_chunks))
             gained = sorted(set(cur.found_chunks) - set(base.found_chunks))
             if lost or gained:
-                result.evidence_changes.append({"question_id": qid, "newly_lost_chunks": lost, "newly_found_chunks": gained})
+                result.evidence_changes.append(
+                    {"question_id": qid, "newly_lost_chunks": lost, "newly_found_chunks": gained}
+                )
             if lost or cur.recall_score < base.recall_score - _EPSILON:
-                result.regressions.append(ChunkRegression(qid, cur.question, lost, base.recall_score, cur.recall_score))
+                result.regressions.append(
+                    ChunkRegression(qid, cur.question, lost, base.recall_score, cur.recall_score)
+                )
             elif gained or cur.recall_score > base.recall_score + _EPSILON:
-                result.improvements.append(ChunkImprovement(qid, cur.question, gained, base.recall_score, cur.recall_score))
+                result.improvements.append(
+                    ChunkImprovement(qid, cur.question, gained, base.recall_score, cur.recall_score)
+                )
             else:
                 result.unchanged.append(qid)
         if result.changed_questions:
             reasons.append("Question requirements or evaluation settings changed.")
         result.compatible = not reasons
-        result.overall_delta = current.overall_recall - baseline.overall_recall if result.compatible else None
+        result.overall_delta = (
+            current.overall_recall - baseline.overall_recall if result.compatible else None
+        )
         return result
 
     def format_table(self, diff: RegressionDiff) -> str:
@@ -211,12 +226,19 @@ class DiffReporter:
         )
         console.print(Panel(header_text, border_style="bold blue"))
         if not diff.compatible:
-            console.print("Comparison incompatible: " + "; ".join(diff.compatibility_reasons), markup=False)
-        for label, values in (("Added questions", diff.added_questions), ("Removed questions", diff.removed_questions)):
+            console.print(
+                "Comparison incompatible: " + "; ".join(diff.compatibility_reasons), markup=False
+            )
+        for label, values in (
+            ("Added questions", diff.added_questions),
+            ("Removed questions", diff.removed_questions),
+        ):
             if values:
                 console.print(label + ": " + ", ".join(values), markup=False)
         for change in diff.changed_questions:
-            console.print(f"Changed {change['question_id']}: {', '.join(change['fields'])}", markup=False)
+            console.print(
+                f"Changed {change['question_id']}: {', '.join(change['fields'])}", markup=False
+            )
 
         # --- Regressions table -------------------------------------------
         if diff.regressions:
@@ -234,9 +256,7 @@ class DiffReporter:
             reg_table.add_column("Current", justify="right", max_width=10)
 
             for r in diff.regressions:
-                question_display = (
-                    r.question[:47] + "..." if len(r.question) > 50 else r.question
-                )
+                question_display = r.question[:47] + "..." if len(r.question) > 50 else r.question
                 chunks_display = ", ".join(r.newly_lost_chunks)
                 if len(chunks_display) > 38:
                     chunks_display = chunks_display[:35] + "..."
@@ -267,9 +287,7 @@ class DiffReporter:
             imp_table.add_column("Current", justify="right", max_width=10)
 
             for i in diff.improvements:
-                question_display = (
-                    i.question[:47] + "..." if len(i.question) > 50 else i.question
-                )
+                question_display = i.question[:47] + "..." if len(i.question) > 50 else i.question
                 chunks_display = ", ".join(i.newly_found_chunks)
                 if len(chunks_display) > 38:
                     chunks_display = chunks_display[:35] + "..."
@@ -327,7 +345,9 @@ class DiffReporter:
         """
         lines: list[str] = []
         if not diff.compatible:
-            lines.append("::error title=Incompatible comparison::" + "; ".join(diff.compatibility_reasons))
+            lines.append(
+                "::error title=Incompatible comparison::" + "; ".join(diff.compatibility_reasons)
+            )
 
         for r in diff.regressions:
             chunks_str = ", ".join(r.newly_lost_chunks) if r.newly_lost_chunks else "none"

@@ -26,7 +26,13 @@ class EvaluationExecutionError(RuntimeError):
     """Retrieval failed operationally, rather than producing a quality miss."""
 
 
-def select_questions(golden_set: GoldenSet, config: ProbeConfig, *, tags: list[str] | None = None, include_drafts: bool = False) -> GoldenSet:
+def select_questions(
+    golden_set: GoldenSet,
+    config: ProbeConfig,
+    *,
+    tags: list[str] | None = None,
+    include_drafts: bool = False,
+) -> GoldenSet:
     suite = GoldenSet.from_dict(asdict(golden_set))
     unknown = set(config.scoring.question_thresholds) - {q.id for q in suite.questions}
     if unknown:
@@ -36,7 +42,9 @@ def select_questions(golden_set: GoldenSet, config: ProbeConfig, *, tags: list[s
     if not include_drafts:
         suite = suite.filter_by_status("approved")
     if not suite.questions:
-        raise EmptyEvaluationError("No questions remain after tag/status selection; add or approve questions, or select --include-drafts for analysis.")
+        raise EmptyEvaluationError(
+            "No questions remain after tag/status selection; add or approve questions, or select --include-drafts for analysis."
+        )
     return suite
 
 
@@ -58,7 +66,12 @@ def evaluate(
     if top_k_override is not None and (type(top_k_override) is not int or top_k_override <= 0):
         raise ConfigurationError("top_k must be a positive integer.")
     baseline = None
-    identity = {"status": "not_requested", "requested_label": None, "resolved_label": None, "timestamp": None}
+    identity = {
+        "status": "not_requested",
+        "requested_label": None,
+        "resolved_label": None,
+        "timestamp": None,
+    }
     if compare and (baseline_label is not None or settings.baseline.auto_compare):
         label = baseline_label if baseline_label is not None else "latest"
         if not isinstance(label, str) or not label.strip():
@@ -68,22 +81,37 @@ def evaluate(
         baseline = store.load(label)
         identity.update(status="not_found", requested_label=label)
         if baseline is None and baseline_label is not None:
-            raise BaselineNotFoundError("Requested baseline was not found; save it explicitly or select an existing label.")
+            raise BaselineNotFoundError(
+                "Requested baseline was not found; save it explicitly or select an existing label."
+            )
         if baseline is not None:
             identity.update(status="compared", resolved_label=label, timestamp=baseline.timestamp)
     selected_ids = {q.id for q in suite.questions}
-    scorer = RecallScorer(settings.scoring.recall_threshold, {k: v for k, v in settings.scoring.question_thresholds.items() if k in selected_ids})
+    scorer = RecallScorer(
+        settings.scoring.recall_threshold,
+        {k: v for k, v in settings.scoring.question_thresholds.items() if k in selected_ids},
+    )
+
     def retrieve_checked(query, top_k):
         try:
             return retrieve(query, top_k)
         except ImportError:
             raise
         except Exception:
-            raise EvaluationExecutionError("Retrieval failed; check the configured endpoint and service diagnostics.") from None
+            raise EvaluationExecutionError(
+                "Retrieval failed; check the configured endpoint and service diagnostics."
+            ) from None
 
     report = scorer.score_all(suite, retrieve_checked, top_k_override)
-    report.policy = {"mode": settings.baseline.quality_gate, "recall_threshold": settings.scoring.recall_threshold}
-    report.selection = {"tags": sorted(set(tags or [])), "include_drafts": include_drafts, "evaluated_question_ids": sorted(selected_ids)}
+    report.policy = {
+        "mode": settings.baseline.quality_gate,
+        "recall_threshold": settings.scoring.recall_threshold,
+    }
+    report.selection = {
+        "tags": sorted(set(tags or [])),
+        "include_drafts": include_drafts,
+        "evaluated_question_ids": sorted(selected_ids),
+    }
     report.baseline_identity = identity
     if baseline is not None:
         comparison = DiffReporter().diff(report, baseline)
@@ -101,5 +129,10 @@ def evaluate(
         reasons.append("Required evidence regressed against the selected baseline.")
     if identity["status"] == "incompatible":
         reasons.append("Baseline comparison is incompatible or unverified.")
-    report.quality = {"passed": not reasons, "mode": "evaluation", "failed_questions": failed, "reasons": reasons}
+    report.quality = {
+        "passed": not reasons,
+        "mode": "evaluation",
+        "failed_questions": failed,
+        "reasons": reasons,
+    }
     return report

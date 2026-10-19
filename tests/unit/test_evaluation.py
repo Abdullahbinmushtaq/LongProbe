@@ -19,7 +19,10 @@ from longprobe.core.policy import BaselineQualityError
 def setup(tmp_path):
     suite = GoldenSet("policies", "1", [GoldenQuestion("q1", "Q1", ["a", "b"])])
     suite.to_yaml(str(tmp_path / "goldens.yaml"))
-    data = {"retriever": {"type": "http", "http": {"url": "http://localhost/retrieve"}}, "baseline": {"db_path": str(tmp_path / "b.db"), "auto_compare": False}}
+    data = {
+        "retriever": {"type": "http", "http": {"url": "http://localhost/retrieve"}},
+        "baseline": {"db_path": str(tmp_path / "b.db"), "auto_compare": False},
+    }
     path = tmp_path / "config.yaml"
     path.write_text(yaml.safe_dump(data))
     return suite, path, ProbeConfig.from_dict(data)
@@ -33,8 +36,8 @@ def test_cli_and_python_use_equivalent_settings_and_results(tmp_path, monkeypatc
     cli = _run_probe(tmp_path / "goldens.yaml", path)[2]
     python = LongProbe(adapter, golden_set=suite, config_path=str(path)).run()
     for report in (cli, python):
-        assert report.overall_recall == .5
-        assert report.policy == {"mode": "all_questions", "recall_threshold": .8}
+        assert report.overall_recall == 0.5
+        assert report.policy == {"mode": "all_questions", "recall_threshold": 0.8}
         assert not report.quality["passed"]
     assert cli.results[0].contract == python.results[0].contract
     assert cli.selection == python.selection
@@ -83,7 +86,12 @@ def test_missing_explicit_reference_fails_before_retrieval(setup):
 def test_optional_reference_absence_is_visible(setup):
     suite, _, config = setup
     config.baseline.auto_compare = True
-    report = evaluate(suite, lambda q, k: [{"id": "a"}, {"id": "b"}], config, store=BaselineStore(config.baseline.db_path))
+    report = evaluate(
+        suite,
+        lambda q, k: [{"id": "a"}, {"id": "b"}],
+        config,
+        store=BaselineStore(config.baseline.db_path),
+    )
     assert report.baseline_identity["status"] == "not_found"
     assert report.baseline_identity["requested_label"] == "latest"
     assert report.quality["passed"]
@@ -94,7 +102,9 @@ def test_explicit_reference_does_not_compare_with_latest_first(setup):
     reference = evaluate(suite, lambda q, k: [{"id": "a"}, {"id": "b"}], config, compare=False)
     store = Mock()
     store.load.return_value = reference
-    report = evaluate(suite, lambda q, k: [{"id": "a"}], config, store=store, baseline_label="release")
+    report = evaluate(
+        suite, lambda q, k: [{"id": "a"}], config, store=store, baseline_label="release"
+    )
     store.load.assert_called_once_with("release")
     assert report.regression_detected
     assert report.baseline_identity["resolved_label"] == "release"

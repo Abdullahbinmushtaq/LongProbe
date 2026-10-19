@@ -22,7 +22,9 @@ def report_payload(report: ProbeReport) -> dict:
     payload = report_to_dict(report)
     payload.update(
         golden_set=report.golden_set_name,
-        status=("passed" if report.quality.get("passed") else "failed") if report.quality else "legacy",
+        status=("passed" if report.quality.get("passed") else "failed")
+        if report.quality
+        else "legacy",
         total_questions=len(report.results),
         passed_questions=sum(r.passed for r in report.results),
         failed_questions=sum(not r.passed for r in report.results),
@@ -50,7 +52,10 @@ def github_annotations(report: ProbeReport) -> str:
         lines.append(f"::{level} title=LongProbe Retrieval::{escape_annotation(message)}")
     comparison = report.comparison or {}
     if comparison and not comparison.get("compatible", False):
-        lines.append("::error title=Incompatible comparison::" + escape_annotation("; ".join(comparison.get("compatibility_reasons", []))))
+        lines.append(
+            "::error title=Incompatible comparison::"
+            + escape_annotation("; ".join(comparison.get("compatibility_reasons", [])))
+        )
     for change in comparison.get("regressions", []):
         message = f"[{change['question_id']}] Required evidence lost: {', '.join(change['newly_lost_chunks'])}"
         lines.append("::error title=Retrieval Regression::" + escape_annotation(message))

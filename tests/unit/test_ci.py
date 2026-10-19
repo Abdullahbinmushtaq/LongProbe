@@ -29,7 +29,9 @@ def project(tmp_path):
     suite.to_yaml(str(goldens))
     destination = tmp_path / "restored.db"
     config_path = tmp_path / "config.yaml"
-    config_path.write_text(yaml.safe_dump({"baseline": {"auto_compare": False, "db_path": str(destination)}}))
+    config_path.write_text(
+        yaml.safe_dump({"baseline": {"auto_compare": False, "db_path": str(destination)}})
+    )
     config = ProbeConfig.from_yaml(str(config_path))
     report = evaluate(suite, lambda q, k: [{"id": "a"}, {"id": "b"}], config, compare=False)
     artifact = tmp_path / "artifact"
@@ -46,7 +48,10 @@ def test_restores_explicit_label_without_rewriting_source(project):
     assert (artifact / "baselines.db").read_bytes() == before
 
 
-@pytest.mark.parametrize("change", ["missing-label", "mismatched-path", "incompatible", "multiple-files", "malformed", "legacy"])
+@pytest.mark.parametrize(
+    "change",
+    ["missing-label", "mismatched-path", "incompatible", "multiple-files", "malformed", "legacy"],
+)
 def test_invalid_artifact_preserves_existing_destination(project, change):
     suite, config, goldens, _, report, artifact, destination = project
     destination.write_bytes(b"existing-reference-preserved")
@@ -72,7 +77,9 @@ def test_invalid_artifact_preserves_existing_destination(project, change):
     assert destination.read_bytes() == b"existing-reference-preserved"
 
 
-@pytest.mark.parametrize("artifact,run_id", [("name", ""), ("", "123"), ("name", "-1"), ("name", "abc")])
+@pytest.mark.parametrize(
+    "artifact,run_id", [("name", ""), ("", "123"), ("name", "-1"), ("name", "abc")]
+)
 def test_baseline_inputs_must_be_an_explicit_valid_pair(artifact, run_id):
     with pytest.raises(ConfigurationError):
         validate_baseline_inputs(artifact, run_id, "latest")
@@ -128,15 +135,22 @@ def test_comment_escapes_document_text(project):
     assert "\\| fake \\|" in rendered
 
 
-@pytest.mark.parametrize("version,extras,expected", [
-    ("0.2.0", "chroma,generate", "longprobe[chroma,generate]==0.2.0"),
-    ("0.2.0rc1", "", "longprobe==0.2.0rc1"),
-    ("", "", "longprobe"),
-])
+@pytest.mark.parametrize(
+    "version,extras,expected",
+    [
+        ("0.2.0", "chroma,generate", "longprobe[chroma,generate]==0.2.0"),
+        ("0.2.0rc1", "", "longprobe==0.2.0rc1"),
+        ("", "", "longprobe"),
+    ],
+)
 def test_workflow_install_step_honors_version_as_data(monkeypatch, version, extras, expected):
     path = Path(__file__).parents[2] / ".github/workflows/longprobe.yml"
     workflow = yaml.safe_load(path.read_text())
-    install = next(step["run"] for step in workflow["jobs"]["longprobe-check"]["steps"] if step.get("name") == "Install requested LongProbe version")
+    install = next(
+        step["run"]
+        for step in workflow["jobs"]["longprobe-check"]["steps"]
+        if step.get("name") == "Install requested LongProbe version"
+    )
     code = "\n".join(install.splitlines()[1:-1])
     monkeypatch.setenv("LONGPROBE_VERSION", version)
     monkeypatch.setenv("LONGPROBE_EXTRAS", extras)
@@ -147,11 +161,16 @@ def test_workflow_install_step_honors_version_as_data(monkeypatch, version, extr
     assert install_call.call_args.args[0][-1] == expected
 
 
-@pytest.mark.parametrize("version,extras", [("0.2.0; echo injected", ""), ("0.2.0", "http"), ("", "chroma];echo injected")])
+@pytest.mark.parametrize(
+    "version,extras",
+    [("0.2.0; echo injected", ""), ("0.2.0", "http"), ("", "chroma];echo injected")],
+)
 def test_workflow_rejects_invalid_install_arguments(monkeypatch, version, extras):
     path = Path(__file__).parents[2] / ".github/workflows/longprobe.yml"
     steps = yaml.safe_load(path.read_text())["jobs"]["longprobe-check"]["steps"]
-    install = next(step["run"] for step in steps if step.get("name") == "Install requested LongProbe version")
+    install = next(
+        step["run"] for step in steps if step.get("name") == "Install requested LongProbe version"
+    )
     code = "\n".join(install.splitlines()[1:-1])
     monkeypatch.setenv("LONGPROBE_VERSION", version)
     monkeypatch.setenv("LONGPROBE_EXTRAS", extras)

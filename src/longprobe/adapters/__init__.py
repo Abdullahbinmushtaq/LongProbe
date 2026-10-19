@@ -37,8 +37,7 @@ def create_adapter(adapter_type: str, **kwargs) -> AbstractRetrieverAdapter:
     adapter_cls = adapters.get(adapter_type)
     if adapter_cls is None:
         raise ValueError(
-            f"Unknown adapter type '{adapter_type}'. "
-            f"Must be one of: {', '.join(adapters.keys())}"
+            f"Unknown adapter type '{adapter_type}'. Must be one of: {', '.join(adapters.keys())}"
         )
 
     return adapter_cls(**kwargs)

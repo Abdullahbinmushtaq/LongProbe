@@ -117,11 +117,7 @@ class BaselineStore:
             label: Unique identifier for the baseline snapshot.
         """
         report_json = json.dumps(report_to_dict(report), ensure_ascii=False, allow_nan=False)
-        timestamp = (
-            datetime.now(UTC).isoformat()
-            if not report.timestamp
-            else report.timestamp
-        )
+        timestamp = datetime.now(UTC).isoformat() if not report.timestamp else report.timestamp
 
         with closing(self._get_connection()) as conn:
             # Check whether a row with this label already exists.

@@ -15,8 +15,18 @@ from longprobe.core.golden import GoldenQuestion, GoldenSet
 @pytest.fixture
 def project(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    GoldenSet("policies", "1", [GoldenQuestion("q1", "Q1", ["a", "b"]), GoldenQuestion("draft", "Draft", ["a"], status="draft")]).to_yaml("goldens.yaml")
-    config = {"retriever": {"type": "http", "http": {"url": "http://localhost/retrieve"}}, "baseline": {"db_path": str(tmp_path / "b.db")}}
+    GoldenSet(
+        "policies",
+        "1",
+        [
+            GoldenQuestion("q1", "Q1", ["a", "b"]),
+            GoldenQuestion("draft", "Draft", ["a"], status="draft"),
+        ],
+    ).to_yaml("goldens.yaml")
+    config = {
+        "retriever": {"type": "http", "http": {"url": "http://localhost/retrieve"}},
+        "baseline": {"db_path": str(tmp_path / "b.db")},
+    }
     path = tmp_path / "longprobe.yaml"
     path.write_text(yaml.safe_dump(config))
     adapter = Mock()
@@ -37,14 +47,17 @@ def test_clean_json_keeps_draft_notices_on_stderr(project):
     assert adapter.retrieve.call_count == 1
 
 
-@pytest.mark.parametrize("args", [
-    ["check", "--tag", "unknown"],
-    ["check", "--threshold", "2"],
-    ["check", "--top-k", "0"],
-    ["check", "--config", "missing.yaml"],
-    ["check", "--baseline", "missing"],
-    ["diff", "--baseline", "missing"],
-])
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["check", "--tag", "unknown"],
+        ["check", "--threshold", "2"],
+        ["check", "--top-k", "0"],
+        ["check", "--config", "missing.yaml"],
+        ["check", "--baseline", "missing"],
+        ["diff", "--baseline", "missing"],
+    ],
+)
 def test_setup_failures_are_one_json_object_and_no_retrieval(project, args):
     runner, adapter, _, _, _ = project
     result = runner.invoke(app, [*args, "--output", "json"])
