@@ -40,15 +40,18 @@ Detailed quality monitoring with Python API and comprehensive results.
 ![Monitor RAG Quality](https://raw.githubusercontent.com/ENDEVSOLS/LongProbe/main/assets/02-python-api.gif)
 
 ### Detect Regressions
-Baseline comparison and regression detection with deployment verdict.
+Baseline comparison and retrieval regression detection for the reviewed golden suite.
 
 ![Detect Regressions](https://raw.githubusercontent.com/ENDEVSOLS/LongProbe/main/assets/03-baseline-tracking.gif)
+
+The recordings illustrate earlier workflows. See the [v0.2.0 guide](docs/releases/v0.2.0.md) for current quality gates and comparison rules.
 
 ## Why LongProbe?
 
 Every RAG developer faces the same silent killer: you refactor chunking strategy, upgrade LangChain, or add a new document — and your retrieval silently degrades. DeepEval and RAGChecker are heavyweight evaluation frameworks meant for batch analysis, not fast regression checks in a dev loop.
 
 **LongProbe gives you instant feedback:**
+
 - ⚡ **Sub-second checks** on small golden sets
 - 🔍 **Exact diffs** showing which chunks were lost/gained
 - 📊 **Recall scores** with per-question breakdown
@@ -71,21 +74,21 @@ Together they cover the full RAG pipeline from ingestion to production monitorin
 
 - ⚡ **Sub-second checks** on small golden sets
 - 📋 **Golden Questions + Required Chunks** defined in simple YAML
-- 🔍 **Three match modes**: exact ID, text substring, semantic similarity
+- 🔍 **Three match modes**: exact ID, text substring, and lexical cosine similarity (`semantic` mode)
 - 📊 **Recall Score** with per-question breakdown
 - 🔄 **Regression diff**: exactly which chunks were lost/gained
-- 💾 **SQLite baseline store**: compare against any previous run
+- 💾 **SQLite baseline store**: explicitly save references and compare compatible runs
 - 🧪 **pytest plugin**: integrate into existing test suites
 - 🔌 **Pluggable adapters**: LangChain, LlamaIndex, Chroma, Pinecone, Qdrant
 - 🖥️ **Beautiful CLI** with Rich tables, JSON, and GitHub Actions output
-- 👀 **Watch mode**: auto re-run on file changes
+- 👀 **Watch mode**: auto re-run when the golden file changes
 - 🏗️ **CI/CD ready**: fails pipeline on regression
 
 ## Quick Start
 
 ### Installation
 
-Requires **Python 3.11 or newer**.
+Requires **Python 3.11 or newer**. The package-index commands below install a published version. To use this unreleased v0.2.0 checkout, run `pip install -e .` from the directory containing `pyproject.toml`, or install its locally built wheel. See [installation](docs/getting-started/installation.md).
 
 ```bash
 # Install with UV (recommended)
@@ -95,9 +98,9 @@ uv pip install longprobe
 pip install longprobe
 
 # Install with optional dependencies
-uv pip install longprobe[chroma]      # ChromaDB support
-uv pip install longprobe[openai]      # OpenAI embeddings
-uv pip install longprobe[all]         # Everything
+uv pip install "longprobe[chroma]"      # ChromaDB support
+uv pip install "longprobe[openai]"      # Optional OpenAI SDK
+uv pip install "longprobe[all]"         # Everything
 ```
 
 ### Initialize
@@ -107,6 +110,7 @@ longprobe init
 ```
 
 This creates:
+
 - `.longprobe/` — directory for baseline storage
 - `goldens.yaml` — example golden questions
 - `longprobe.yaml` — configuration file
@@ -117,7 +121,7 @@ Configuration errors and zero-question evaluations fail explicitly. Existing inv
 
 ### Define Golden Questions
 
-Edit `goldens.yaml` with your test cases:
+Edit `goldens.yaml` with reviewed test cases. Omitted status defaults to `approved`; use `status: draft` for unverified candidates. Drafts are excluded by default. See the [golden-question review workflow](docs/guide/golden-questions.md).
 
 ```yaml
 name: "my-rag-golden-set"
@@ -159,10 +163,6 @@ retriever:
   persist_directory: "./chroma_db"
   collection: "my_documents"
 
-embedder:
-  provider: "local"
-  model: "text-embedding-3-small"
-
 scoring:
   recall_threshold: 0.8
   fail_on_regression: true
@@ -170,7 +170,10 @@ scoring:
 baseline:
   db_path: ".longprobe/baselines.db"
   auto_compare: true
+  quality_gate: all_questions
 ```
+
+Baseline promotion requires every evaluated approved question to pass by default. Per-question thresholds and an explicit aggregate promotion policy are available in the [configuration guide](docs/getting-started/configuration.md).
 
 ### Run Checks
 
@@ -181,12 +184,20 @@ longprobe check --goldens goldens.yaml
 # Override settings
 longprobe check --threshold 0.9 --top-k 10
 
+# After saving v1.0, require that reference
+longprobe check --baseline v1.0
+
+# Inspect current quality without a historical comparison
+longprobe check --no-compare
+
 # JSON output for automation
 longprobe check --output json
 
 # GitHub Actions annotations
 longprobe check --output github
 ```
+
+Parsed JSON commands emit one stdout object. Evaluation exit codes distinguish quality failures (`1`), invalid or incompatible setup (`2`), and execution failures (`3`); see the [CLI reference](docs/guide/cli-reference.md).
 
 ## CLI Reference
 
@@ -202,7 +213,8 @@ longprobe check --output github
 | `longprobe baseline list` | List all saved baselines |
 | `longprobe watch` | Watch golden file and re-run on changes |
 | `longprobe generate` | Auto-generate Golden Questions from documents |
-| `longprobe capture` | Build goldens.yaml by querying your retriever |
+| `longprobe capture` | Capture candidate evidence from your retriever |
+| `longprobe edit` | Review and approve draft questions |
 
 ### Examples
 
@@ -267,14 +279,13 @@ probe = LongProbe(adapter=adapter, goldens_path="goldens.yaml")
 report = probe.run()
 probe.save_baseline(label="v1.0")
 
-# After making changes...
-report2 = probe.run()
-
-# Compare against baseline
-diff = probe.diff(baseline_label="v1.0")
-print(f"Regressions: {len(diff['regressions'])}")
-print(f"Improvements: {len(diff['improvements'])}")
+# After making changes, evaluate against the explicitly selected reference.
+report2 = probe.run(baseline_label="v1.0")
+print(report2.comparison)
+assert report2.quality["passed"], report2.quality["reasons"]
 ```
+
+Saving a baseline is explicit and never happens automatically after a passing check. Legacy references remain readable, but strict comparison requires a reviewed new-format reference. See [baseline management](docs/guide/baseline-management.md).
 
 ### With LangChain
 
@@ -287,7 +298,7 @@ adapter = LangChainRetrieverAdapter(your_langchain_retriever)
 probe = LongProbe(adapter=adapter, goldens_path="goldens.yaml")
 report = probe.run()
 
-assert report.overall_recall >= 0.85, f"Recall too low: {report.overall_recall}"
+assert report.quality["passed"], report.quality["reasons"]
 ```
 
 ### With LlamaIndex
@@ -305,41 +316,22 @@ report = probe.run()
 
 ### Configuration
 
-```python
-# conftest.py
-import pytest
-from longprobe import LongProbe
-from longprobe.adapters import create_adapter
+Configure the retriever, scoring, and baseline settings in `longprobe.yaml`. The installed plugin supplies `longprobe_report`, which evaluates once per pytest session and shares the result across tests.
 
-@pytest.fixture
-def probe():
-    adapter = create_adapter(
-        "chroma",
-        collection_name="test_docs",
-        persist_directory="./test_db"
-    )
-    return LongProbe(
-        adapter=adapter,
-        goldens_path="tests/goldens.yaml",
-        recall_threshold=0.85
-    )
+```bash
+pytest --longprobe-config tests/longprobe.yaml --longprobe-goldens tests/goldens.yaml
 ```
 
 ### Writing Tests
 
-The installed plugin also supplies `longprobe_report` for one evaluation per pytest session. Use `assert longprobe_report.quality["passed"]` to enforce its verdict, or `pytest --longprobe-fail-threshold 0.85` for automatic enforcement. See [pytest integration](docs/integrations/pytest.md).
-
 ```python
-def test_retrieval_recall(probe):
-    report = probe.run()
-    assert report.overall_recall >= 0.85, (
-        f"Recall dropped to {report.overall_recall:.2f}"
-    )
-
-def test_no_regression_vs_baseline(probe):
-    report = probe.run()
-    assert report.quality["passed"], report.quality["reasons"]
+def test_retrieval_quality(longprobe_report):
+    assert longprobe_report.quality["passed"], longprobe_report.quality["reasons"]
 ```
+
+Alternatively, use `pytest --longprobe-fail-threshold 0.85` to enforce quality automatically, even when tests do not request the report. Explicit per-question thresholds take precedence over that global threshold. Without an assertion or enforcement option, requesting a report alone does not enforce passing quality.
+
+See [pytest integration](docs/integrations/pytest.md) for custom adapter fixtures and session behavior.
 
 ## Retriever Adapters
 
@@ -379,6 +371,8 @@ retriever:
 
 ## GitHub Actions
 
+The package-index example below requires publication of v0.2.0. Configure your retriever and make its reviewed index or endpoint available to the runner. For the reusable workflow, trusted baseline artifact restoration, and one-evaluation PR feedback, see [CI/CD integration](docs/integrations/cicd.md).
+
 ```yaml
 name: RAG Regression Check
 
@@ -390,11 +384,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v4
-      - run: uv pip install longprobe[chroma]
+      - run: uv pip install --system "longprobe[chroma]==0.2.0"
       - name: Run RAG regression check
         run: longprobe check --goldens goldens.yaml --output github
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 ```
 
 ## Match Modes
@@ -406,7 +398,7 @@ Exact string match on chunk/document IDs. Best when you control the IDs in your 
 Case-insensitive substring matching. Checks if the required text appears anywhere in the retrieved documents.
 
 ### Semantic Match (`match_mode: "semantic"`)
-Word-frequency cosine similarity. Useful when exact text may vary but meaning should be preserved.
+Word-frequency cosine similarity. Measures lexical overlap; it does not use neural embeddings or guarantee matching paraphrases.
 
 ## Current limitations
 
