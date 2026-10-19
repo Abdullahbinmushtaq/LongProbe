@@ -10,7 +10,7 @@ From the repository root:
 
 ```bash
 make setup-demos
-demos/.demo_venv/bin/python demo_run/detect_regressions.py
+demos/.recording_venv/bin/python demo_run/detect_regressions.py
 ```
 
 The deterministic sample retriever starts with all three reviewed cases passing. The script saves an eligible reference, removes refund evidence, and evaluates again. It shows one regression, zero improvements, compatible contracts, and failed quality. Temporary files are removed afterward; no external database or embedding model is required.

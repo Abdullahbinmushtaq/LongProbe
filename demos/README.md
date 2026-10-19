@@ -11,14 +11,16 @@ make setup-demos
 make check-demos
 ```
 
-Setup installs this checkout into `demos/.demo_venv`; it does not install an older published package or download embedding models. Package installation may need network access. Once installed, these scenarios run without external services. Each run uses temporary golden/configuration/baseline files and cleans them up afterward.
+The dedicated `demos/.recording_venv` directory is generated and rebuilt by setup. The legacy `demos/.demo_venv` directory is not used: it contains machine-specific files and may have broken Python links.
+
+Setup installs this checkout into `demos/.recording_venv`; it does not install an older published package or download embedding models. Package installation may need network access. Once installed, these scenarios run without external services. Each run uses temporary golden/configuration/baseline files and cleans them up afterward.
 
 Run an individual scenario with recording pauses:
 
 ```bash
-demos/.demo_venv/bin/python demo_run/complete_workflow.py
-demos/.demo_venv/bin/python demo_run/monitor_rag_quality.py
-demos/.demo_venv/bin/python demo_run/detect_regressions.py
+demos/.recording_venv/bin/python demo_run/complete_workflow.py
+demos/.recording_venv/bin/python demo_run/monitor_rag_quality.py
+demos/.recording_venv/bin/python demo_run/detect_regressions.py
 ```
 
 Add `--no-delay` for immediate output.

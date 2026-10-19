@@ -23,7 +23,7 @@ From the repository root:
 
 ```bash
 make setup-demos
-demos/.demo_venv/bin/python demo_run/complete_workflow.py
+demos/.recording_venv/bin/python demo_run/complete_workflow.py
 ```
 
 Add `--no-delay` to skip presentation pauses. Each run uses temporary project files and removes them afterward.

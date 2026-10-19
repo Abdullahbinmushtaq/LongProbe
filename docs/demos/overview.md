@@ -54,9 +54,9 @@ cd LongProbe
 bash demos/setup_demo_env.sh
 
 # Run any demo
-demos/.demo_venv/bin/python demo_run/complete_workflow.py
-demos/.demo_venv/bin/python demo_run/monitor_rag_quality.py
-demos/.demo_venv/bin/python demo_run/detect_regressions.py
+demos/.recording_venv/bin/python demo_run/complete_workflow.py
+demos/.recording_venv/bin/python demo_run/monitor_rag_quality.py
+demos/.recording_venv/bin/python demo_run/detect_regressions.py
 ```
 
 ## Use Cases Covered

@@ -22,14 +22,14 @@ setup-demos: ## Install this checkout for self-contained demo recordings
 	@bash demos/setup_demo_env.sh
 
 check-demos: ## Execute demo scenarios without recording pauses
-	demos/.demo_venv/bin/python demo_run/complete_workflow.py --no-delay
-	demos/.demo_venv/bin/python demo_run/monitor_rag_quality.py --no-delay
-	demos/.demo_venv/bin/python demo_run/detect_regressions.py --no-delay
-	demos/.demo_venv/bin/python demo_run/test_rag_retrieval.py --no-delay
+	demos/.recording_venv/bin/python demo_run/complete_workflow.py --no-delay
+	demos/.recording_venv/bin/python demo_run/monitor_rag_quality.py --no-delay
+	demos/.recording_venv/bin/python demo_run/detect_regressions.py --no-delay
+	demos/.recording_venv/bin/python demo_run/test_rag_retrieval.py --no-delay
 
 demos: ## Record and synchronize GIFs (requires VHS, ttyd, Chromium, and ffmpeg)
 	@command -v vhs >/dev/null 2>&1 || { echo "VHS is required; see demos/README.md"; exit 1; }
-	@test -x demos/.demo_venv/bin/python || { echo "Run make setup-demos first"; exit 1; }
+	@test -x demos/.recording_venv/bin/python || { echo "Run make setup-demos first"; exit 1; }
 	vhs demos/01-complete-workflow.tape
 	vhs demos/01-quick-check.tape
 	vhs demos/02-python-api.tape

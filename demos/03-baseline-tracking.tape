@@ -9,7 +9,7 @@ Set Padding 40
 Set TypingSpeed 100ms
 
 Hide
-Type "source demos/.demo_venv/bin/activate"
+Type "source demos/.recording_venv/bin/activate"
 Enter
 Type "export PS1='$ '"
 Enter

@@ -10,7 +10,7 @@ From the repository root:
 
 ```bash
 make setup-demos
-demos/.demo_venv/bin/python demo_run/monitor_rag_quality.py
+demos/.recording_venv/bin/python demo_run/monitor_rag_quality.py
 ```
 
 The script uses three reviewed sample cases, an 85% threshold, and a deterministic in-memory adapter. It runs without an external service or optional vector SDK. Temporary files are removed after each run. Add `--no-delay` for immediate output.
