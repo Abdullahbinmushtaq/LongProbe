@@ -32,20 +32,17 @@ from rich.prompt import Confirm, Prompt
 from rich.table import Table
 
 from longprobe._files import atomic_write_text, check_destination
-from longprobe.adapters import (
-    ChromaAdapter,
-    HttpAdapter,
-    PineconeAdapter,
-    QdrantAdapter,
-)
+from longprobe.adapters import create_adapter_from_config
 from longprobe.config import ConfigurationError, GeneratorConfig, ProbeConfig
 from longprobe.core.baseline import BaselineStore
 from longprobe.core.diff import DiffReporter
 from longprobe.core.docparser import DocumentParser
+from longprobe.core.evaluation import evaluate, select_questions
 from longprobe.core.explain import explain_failure
 from longprobe.core.generator import QuestionGenerator
 from longprobe.core.golden import GoldenQuestion, GoldenSet, generate_question_id
-from longprobe.core.scorer import EmptyEvaluationError, ProbeReport, RecallScorer
+from longprobe.core.policy import BaselineQualityError, require_baseline_quality
+from longprobe.core.scorer import EmptyEvaluationError, ProbeReport
 
 # ---------------------------------------------------------------------------
 # App setup
@@ -66,6 +63,7 @@ baseline_app = typer.Typer(
 app.add_typer(baseline_app, name="baseline")
 
 console = Console()
+diagnostics = Console(stderr=True)
 
 # ---------------------------------------------------------------------------
 # File-content templates
@@ -213,6 +211,9 @@ def _command_errors(fn):
     def wrapped(*args, **kwargs):
         try:
             return fn(*args, **kwargs)
+        except BaselineQualityError as exc:
+            console.print(str(exc), markup=False)
+            raise typer.Exit(1) from None
         except EmptyEvaluationError as exc:
             console.print(str(exc), markup=False)
             raise typer.Exit(1) from None
@@ -229,55 +230,8 @@ def _command_errors(fn):
 
 
 def _create_adapter_from_config(config: ProbeConfig):
-    """Instantiate the correct retriever adapter based on config.
-
-    For ``langchain`` and ``llamaindex`` types an informative error is printed
-    because they require a live retriever object that cannot be created from
-    a static config alone.
-    """
-    rtype = getattr(config.retriever, "type", "chroma") or "chroma"
-
-    if rtype in ("langchain", "llamaindex"):
-        console.print(
-            f"[bold red]Error:[/bold red] Retriever type '{rtype}' requires "
-            "programmatic usage via the Python API.\n"
-            "Use the LongProbe Python API directly:\n\n"
-            "  from longprobe import LongProbe, LangChainRetrieverAdapter\n"
-            "  probe = LongProbe(adapter=LangChainRetrieverAdapter(my_retriever), ...)\n"
-            "  report = probe.run()\n",
-        )
-        raise typer.Exit(1)
-
-    if rtype == "chroma":
-        kwargs: dict[str, Any] = {
-            "collection_name": getattr(config.retriever, "collection", "default"),
-        }
-        persist_dir = getattr(config.retriever, "persist_directory", None)
-        if persist_dir:
-            kwargs["persist_directory"] = persist_dir
-        return ChromaAdapter(**kwargs)
-
-    if rtype == "pinecone":
-        return PineconeAdapter(
-            index_name=getattr(config.retriever, "index_name", ""),
-            api_key=getattr(config.retriever, "api_key", ""),
-            namespace=getattr(config.retriever, "namespace", ""),
-        )
-
-    if rtype == "qdrant":
-        return QdrantAdapter(
-            collection_name=getattr(config.retriever, "collection", "default"),
-            host=getattr(config.retriever, "host", "localhost"),
-            port=int(getattr(config.retriever, "port", 6333)),
-            api_key=getattr(config.retriever, "api_key", ""),
-        )
-
-    if rtype == "http":
-        return HttpAdapter(config=config.retriever.http)
-
-    console.print(f"[bold red]Error:[/bold red] Unknown retriever type: '{rtype}'")
-    console.print("Supported types: chroma, pinecone, qdrant, http")
-    raise typer.Exit(1)
+    """Compatibility seam for CLI callers and tests; construction is shared."""
+    return create_adapter_from_config(config)
 
 
 def _display_results(
@@ -482,88 +436,31 @@ def _run_probe(
     threshold_override: float | None = None,
     tags: list[str] | None = None,
     include_drafts: bool = False,
+    *,
+    baseline_label: str | None = None,
+    compare: bool = True,
 ) -> tuple[ProbeConfig, Any, ProbeReport]:
-    """Shared logic used by ``check``, ``baseline save``, ``diff``, and ``watch``.
-
-    Returns ``(config, adapter, report)``.
-    """
-    # 1. Load golden set
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        console=console,
-        transient=True,
-    ) as progress:
-        progress.add_task("Loading golden set...", total=None)
-        golden_set = _load_golden_set(goldens_path)
-        if golden_set is None:
-            raise typer.Exit(1)
-
-        if not golden_set.questions:
-            raise EmptyEvaluationError("No questions in golden set; add golden questions before checking.")
-
-        if tags:
-            golden_set = golden_set.filter_by_tags(tags)
-            if not golden_set.questions:
-                raise EmptyEvaluationError("No questions match the selected tags; correct the tags or add matching questions.")
-
-        draft_count = sum(1 for q in golden_set.questions if q.status.lower() == "draft")
-        if not include_drafts:
-            golden_set = golden_set.filter_by_status("approved")
-            if draft_count > 0:
-                console.print(
-                    f"[dim]Notice: {draft_count} draft question(s) excluded. "
-                    f"Run [cyan]longprobe edit[/cyan] to review and approve.[/dim]\n"
-                )
-            if not golden_set.questions:
-                raise EmptyEvaluationError("No approved questions remain; run longprobe edit to approve drafts or use --include-drafts.")
-
-        # 2. Load config
-        progress.add_task("Loading config...", total=None)
-        config = _load_config(config_path)
-
-        # 3. Create adapter
-        progress.add_task("Initialising retriever adapter...", total=None)
-        if threshold_override is not None:
-            config.scoring.recall_threshold = threshold_override
-        if top_k_override is not None and (type(top_k_override) is not int or top_k_override <= 0):
-            raise ConfigurationError("top_k must be a positive integer.")
-        config.validate_for("evaluate")
-        adapter = _create_adapter_from_config(config)
-
-    # 4. Create scorer
-    effective_threshold = (
-        threshold_override
-        if threshold_override is not None
-        else config.scoring.recall_threshold
-    )
-    scorer = RecallScorer(recall_threshold=effective_threshold)
-
-    # 5. Run probes
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        console=console,
-        transient=True,
-    ) as progress:
-        progress.add_task("Running probes...", total=None)
-        report = scorer.score_all(
-            golden_set,
-            adapter.retrieve,
-            top_k_override=top_k_override,
-        )
-
-    # 6. Auto-compare against baseline
-    if config.baseline.auto_compare:
-        db_path = config.baseline.db_path
-        store = BaselineStore(db_path=db_path)
-        baseline = store.load("latest")
-        if baseline is not None:
-            report.baseline_recall = baseline.overall_recall
-            report.recall_delta = report.overall_recall - baseline.overall_recall
-            diff_result = store.diff(report, baseline)
-            report.regression_detected = len(diff_result["regressions"]) > 0
-
+    """Adapt CLI input to the shared evaluation module."""
+    golden_set = _load_golden_set(goldens_path)
+    if golden_set is None:
+        raise ValueError("Cannot load golden questions.")
+    select_questions(golden_set, ProbeConfig.defaults(), tags=tags, include_drafts=include_drafts)
+    if not include_drafts:
+        drafts = sum(q.status == "draft" for q in golden_set.questions)
+        if drafts:
+            diagnostics.print(f"Notice: {drafts} draft question(s) excluded. Run longprobe edit to review and approve.")
+    config = _load_config(config_path)
+    if threshold_override is not None:
+        config.scoring.recall_threshold = threshold_override
+    config.validate_for("evaluate")
+    select_questions(golden_set, config, tags=tags, include_drafts=include_drafts)
+    if top_k_override is not None and (type(top_k_override) is not int or top_k_override <= 0):
+        raise ConfigurationError("top_k must be a positive integer.")
+    adapter = _create_adapter_from_config(config)
+    store = BaselineStore(config.baseline.db_path)
+    report = evaluate(golden_set, adapter.retrieve, config, store=store,
+                      tags=tags, include_drafts=include_drafts, top_k_override=top_k_override,
+                      baseline_label=baseline_label, compare=compare)
     return config, adapter, report
 
 
@@ -758,23 +655,10 @@ def baseline_save(
         threshold_override=threshold,
         tags=tag,
         include_drafts=False,
+        compare=False,
     )
 
-    effective_threshold = (
-        threshold if threshold is not None else cfg.scoring.recall_threshold
-    )
-    if report.overall_recall < effective_threshold:
-        console.print(
-            Panel(
-                f"[bold red]Quality Gate Error:[/bold red] Baseline recall ({report.overall_recall:.2f}) "
-                f"is below required threshold ({effective_threshold:.2f}).\n"
-                f"  Evaluated: {len(report.results)} approved question(s)\n"
-                f"  Baseline '[bold cyan]{label}[/bold cyan]' was NOT saved.",
-                title="Quality Gate Error",
-                border_style="red",
-            ),
-        )
-        raise typer.Exit(1)
+    require_baseline_quality(report)
 
     store = BaselineStore(db_path=cfg.baseline.db_path)
     store.save(report=report, label=label)

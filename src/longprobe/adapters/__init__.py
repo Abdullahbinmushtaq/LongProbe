@@ -44,6 +44,22 @@ def create_adapter(adapter_type: str, **kwargs) -> AbstractRetrieverAdapter:
     return adapter_cls(**kwargs)
 
 
+def create_adapter_from_config(config) -> AbstractRetrieverAdapter:
+    """Build a configured adapter without depending on CLI or pytest code."""
+    config.validate_for("evaluate")
+    r = config.retriever
+    if r.type == "http":
+        return HttpAdapter(config=r.http)
+    if r.type == "chroma":
+        kwargs = {"collection_name": r.collection}
+        if r.persist_directory:
+            kwargs["persist_directory"] = r.persist_directory
+        return ChromaAdapter(**kwargs)
+    if r.type == "pinecone":
+        return PineconeAdapter(index_name=r.index_name, api_key=r.api_key, namespace=r.namespace)
+    return QdrantAdapter(collection_name=r.collection, host=r.host, port=r.port, api_key=r.api_key)
+
+
 __all__ = [
     "AbstractRetrieverAdapter",
     "ChromaAdapter",
@@ -53,4 +69,5 @@ __all__ = [
     "PineconeAdapter",
     "QdrantAdapter",
     "create_adapter",
+    "create_adapter_from_config",
 ]
