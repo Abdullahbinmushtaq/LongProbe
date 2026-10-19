@@ -124,6 +124,8 @@ def report_from_dict(data: dict) -> ProbeReport:
                 raise ReportError("Report quality decision is invalid.")
             _strings(report.quality.get("failed_questions"), "quality.failed_questions")
             _strings(report.quality.get("reasons"), "quality.reasons")
+            if report.quality["passed"] and report.quality["mode"] in {"evaluation", "all_questions"} and any(not r.passed for r in results):
+                raise ReportError("Report passing verdict contradicts failed questions.")
         if report.comparison is not None:
             comparison = report.comparison
             if type(comparison.get("compatible")) is not bool:
@@ -133,6 +135,25 @@ def report_from_dict(data: dict) -> ProbeReport:
             for key in ("regressions", "improvements", "changed_questions", "evidence_changes"):
                 if not isinstance(comparison.get(key), list) or any(not isinstance(item, dict) for item in comparison[key]):
                     raise ReportError("Report comparison changes must be lists of objects.")
+                for item in comparison[key]:
+                    if not isinstance(item.get("question_id"), str) or not item["question_id"].strip():
+                        raise ReportError("Report comparison changes require question IDs.")
+                    if key in {"regressions", "improvements"}:
+                        _number(item.get("baseline_recall"), "comparison.baseline_recall")
+                        _number(item.get("current_recall"), "comparison.current_recall")
+                    if key in {"regressions", "evidence_changes"}:
+                        _strings(item.get("newly_lost_chunks"), "comparison.newly_lost_chunks")
+                    if key in {"improvements", "evidence_changes"}:
+                        _strings(item.get("newly_found_chunks"), "comparison.newly_found_chunks")
+                    if key == "changed_questions":
+                        _strings(item.get("fields"), "comparison.fields")
+            delta = comparison.get("overall_delta")
+            if not comparison["compatible"] and delta is not None:
+                raise ReportError("Incompatible comparisons cannot carry a comparable overall delta.")
+            if delta is not None and (isinstance(delta, bool) or not isinstance(delta, (float, int)) or not math.isfinite(delta) or abs(delta) > 1):
+                raise ReportError("Report comparison delta is invalid.")
+            if report.quality.get("passed") and report.quality.get("mode") == "evaluation" and (not comparison["compatible"] or comparison["regressions"]):
+                raise ReportError("Report passing verdict contradicts comparison failures.")
         if type(report.regression_detected) is not bool:
             raise ReportError("Report regression flag must be a boolean.")
         if report.recall_delta is not None:
@@ -140,6 +161,9 @@ def report_from_dict(data: dict) -> ProbeReport:
             if isinstance(delta, bool) or not isinstance(delta, (int, float)) or not math.isfinite(delta) or abs(delta) > 1:
                 raise ReportError("Report recall_delta must be a finite difference in [-1, 1].")
         if version == SCHEMA_VERSION:
+            if report.policy.get("mode") not in {"all_questions", "aggregate"}:
+                raise ReportError("Report baseline quality policy is missing or invalid.")
+            _number(report.policy.get("recall_threshold"), "policy.recall_threshold")
             mean = sum(r.recall_score for r in results) / len(results)
             rate = sum(r.passed for r in results) / len(results)
             if abs(mean - report.overall_recall) > 1e-9 or abs(rate - report.pass_rate) > 1e-9:

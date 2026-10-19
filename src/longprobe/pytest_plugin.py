@@ -67,7 +67,10 @@ def longprobe_adapter(longprobe_config_path: str):
 def longprobe_probe(longprobe_adapter, longprobe_goldens_path: str, longprobe_config_path: str,
                     longprobe_include_drafts: bool, longprobe_fail_threshold: float | None):
     from longprobe import LongProbe
+    from longprobe.config import ProbeConfig
 
+    # A selected pytest path is required even for a custom application adapter.
+    ProbeConfig.from_yaml(longprobe_config_path)
     return LongProbe(adapter=longprobe_adapter, goldens_path=longprobe_goldens_path,
                      config_path=longprobe_config_path, include_drafts=longprobe_include_drafts,
                      recall_threshold=longprobe_fail_threshold)

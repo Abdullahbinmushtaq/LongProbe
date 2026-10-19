@@ -69,6 +69,10 @@ def test_legacy_row_is_read_without_rewriting(tmp_path, report):
     lambda d: d["results"][0].update(found_chunks=["unknown"]),
     lambda d: d["results"][0].update(contract=None),
     lambda d: d["results"][0]["contract"].update(top_k=20),
+    lambda d: d.update(policy={}),
+    lambda d: d.update(quality={"passed": "false", "mode": "evaluation"}),
+    lambda d: d.update(quality={"passed": True, "mode": "evaluation", "failed_questions": [], "reasons": []}),
+    lambda d: d.update(comparison={"compatible": "true"}),
 ])
 def test_rejects_malformed_or_unsupported_reports(report, change):
     data = asdict(report)

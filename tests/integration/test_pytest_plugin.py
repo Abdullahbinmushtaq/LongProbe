@@ -111,6 +111,24 @@ def longprobe_adapter():
     assert not (project / "calls.txt").exists()
 
 
+def test_missing_selected_config_with_custom_adapter_does_not_use_python_defaults(project):
+    (project / "selected.yaml").unlink()
+    with (project / "conftest.py").open("a") as stream:
+        stream.write('''
+import pytest
+@pytest.fixture(scope="session")
+def longprobe_adapter():
+    class Adapter:
+        def retrieve(self, query, top_k):
+            raise AssertionError("must not retrieve")
+    return Adapter()
+''')
+    result = run_project(project, "def test_report(longprobe_report): assert longprobe_report")
+    assert result.returncode != 0
+    assert "FileNotFoundError" in result.stdout
+    assert not (project / "calls.txt").exists()
+
+
 @pytest.mark.parametrize("threshold", ["nan", "1.2", "-0.1"])
 def test_invalid_threshold_fails_before_retrieval(project, threshold):
     result = run_project(project, "def test_regular(): assert True", "--longprobe-fail-threshold", threshold)
