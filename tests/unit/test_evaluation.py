@@ -74,6 +74,18 @@ def test_passing_snapshot_survives_returned_report_mutation(setup):
     assert probe.baseline_store.load("latest") is None
 
 
+@pytest.mark.parametrize("label", ["", " ", None])
+def test_unusable_baseline_labels_cannot_be_promoted(setup, label):
+    suite, path, _ = setup
+    adapter = Mock()
+    adapter.retrieve.return_value = [{"id": "a"}, {"id": "b"}]
+    probe = LongProbe(adapter, golden_set=suite, config_path=str(path))
+    probe.run()
+    with pytest.raises(ValueError, match="label"):
+        probe.save_baseline(label)
+    assert probe.baseline_store.list_labels() == []
+
+
 def test_missing_explicit_reference_fails_before_retrieval(setup):
     suite, _, config = setup
     retrieve = Mock()

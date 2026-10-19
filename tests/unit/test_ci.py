@@ -10,6 +10,7 @@ import yaml
 
 from longprobe.ci import (
     determine_exit,
+    main,
     markdown_report,
     restore_baseline,
     run_evaluation,
@@ -83,6 +84,25 @@ def test_invalid_artifact_preserves_existing_destination(project, change):
 def test_baseline_inputs_must_be_an_explicit_valid_pair(artifact, run_id):
     with pytest.raises(ConfigurationError):
         validate_baseline_inputs(artifact, run_id, "latest")
+
+
+def test_missing_ci_configuration_is_a_setup_failure(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "longprobe.ci",
+            "restore",
+            "--artifact-dir",
+            str(tmp_path),
+            "--destination",
+            str(tmp_path / "b.db"),
+            "--config",
+            str(tmp_path / "absent.yaml"),
+            "--goldens",
+            str(tmp_path / "goldens.yaml"),
+        ],
+    )
+    assert main() == 2
 
 
 def test_relaxed_gate_does_not_hide_invalid_execution(project, tmp_path):

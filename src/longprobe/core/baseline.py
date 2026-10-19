@@ -116,6 +116,8 @@ class BaselineStore:
             report: The probe report to store.
             label: Unique identifier for the baseline snapshot.
         """
+        if not isinstance(label, str) or not label.strip():
+            raise ValueError("Baseline label must be a nonempty string.")
         report_json = json.dumps(report_to_dict(report), ensure_ascii=False, allow_nan=False)
         timestamp = datetime.now(UTC).isoformat() if not report.timestamp else report.timestamp
 

@@ -263,6 +263,12 @@ def main() -> int:
             )
             # The workflow performs its final gate after uploads/comments.
             return 0 if os.environ.get("GITHUB_OUTPUT") else code
+    except FileNotFoundError:
+        print(
+            "::error title=LongProbe Setup::Selected input was not found; check configuration and artifact paths.",
+            file=sys.stderr,
+        )
+        return 2
     except (ConfigurationError, ReportError, ValueError) as exc:
         print("::error title=LongProbe Setup::" + escape_annotation(str(exc)), file=sys.stderr)
         return 2
