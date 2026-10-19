@@ -523,13 +523,17 @@ def check(
         help="Include draft questions in the evaluation run.",
     ),
     baseline_label: Annotated[str | None, typer.Option("--baseline", "-b", help="Explicit baseline label; must exist.")] = None,
+    compare: Annotated[bool, typer.Option("--compare/--no-compare", help="Enable configured baseline comparison.")] = True,
 ) -> None:
     """Run probes against the golden set and report retrieval quality."""
     validate_output(output)
+    if baseline_label is not None and not compare:
+        raise ConfigurationError("--baseline and --no-compare cannot be combined.")
     cfg, _adapter, report = _run_probe(
         goldens_path=goldens, config_path=config, top_k_override=top_k,
         threshold_override=threshold, tags=tag, include_drafts=include_drafts,
         baseline_label=baseline_label,
+        compare=compare,
     )
     _display_results(report, output, report.comparison)
     code = report_exit_code(report, blocking=cfg.scoring.fail_on_regression)
