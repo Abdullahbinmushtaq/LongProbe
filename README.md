@@ -19,6 +19,8 @@
 
 ## Overview
 
+This checkout targets **v0.2.0 (unreleased)**. Use an editable checkout or the built wheel for these changes until publication. See the [release and migration notes](docs/releases/v0.2.0.md).
+
 > "Did my last commit break retrieval?" — now you know in seconds.
 
 LongProbe is a **sub-second RAG regression harness**. Define your Golden Questions once, run `longprobe check` on every commit, and get an exact diff of which document chunks were lost in your latest change — before your users notice.
@@ -111,7 +113,7 @@ This creates:
 
 The initial content is copied from fixed templates in CLI source. It does not read your documents or embeddings. Replace example questions with verified cases, or use `capture`/`generate --auto-capture` and review drafts with `edit`.
 
-Configuration errors and zero-question evaluations fail explicitly. Existing invalid golden files are preserved rather than replaced during generation. See the [working local HTTP quick start](docs/getting-started/quick-start.md) and [v0.1.3 reliability notes](docs/releases/v0.1.3.md).
+Configuration errors and zero-question evaluations fail explicitly. Existing invalid golden files are preserved rather than replaced during generation. See the [working local HTTP quick start](docs/getting-started/quick-start.md) and [v0.2.0 migration notes](docs/releases/v0.2.0.md).
 
 ### Define Golden Questions
 
@@ -195,7 +197,8 @@ longprobe check --output github
 | `longprobe init` | Create starter configuration files |
 | `longprobe check` | Run probes against the golden set |
 | `longprobe diff` | Compare current results against baseline |
-| `longprobe baseline save` | Save current results as baseline |
+| `longprobe baseline save` | Fresh approved-only evaluation and policy-gated baseline promotion |
+| `longprobe report PATH` | Render a saved JSON report without retrieval |
 | `longprobe baseline list` | List all saved baselines |
 | `longprobe watch` | Watch golden file and re-run on changes |
 | `longprobe generate` | Auto-generate Golden Questions from documents |
@@ -324,6 +327,8 @@ def probe():
 
 ### Writing Tests
 
+The installed plugin also supplies `longprobe_report` for one evaluation per pytest session. Use `assert longprobe_report.quality["passed"]` to enforce its verdict, or `pytest --longprobe-fail-threshold 0.85` for automatic enforcement. See [pytest integration](docs/integrations/pytest.md).
+
 ```python
 def test_retrieval_recall(probe):
     report = probe.run()
@@ -333,9 +338,7 @@ def test_retrieval_recall(probe):
 
 def test_no_regression_vs_baseline(probe):
     report = probe.run()
-    assert not report.regression_detected, (
-        f"Regression detected! Delta: {report.recall_delta}"
-    )
+    assert report.quality["passed"], report.quality["reasons"]
 ```
 
 ## Retriever Adapters
@@ -407,7 +410,7 @@ Word-frequency cosine similarity. Useful when exact text may vary but meaning sh
 
 ## Current limitations
 
-Normal checks pass text directly to the retriever; `embedder` settings are not wired into this path. Pinecone/Qdrant need an embedding-aware custom adapter or application endpoint. Semantic matching uses word frequencies, not neural embeddings. The default pytest adapter fixture needs a user override. Baseline quality policy and general JSON stdout cleanup are deferred; this patch does not add rank/distance explanations.
+Normal checks pass text directly to the retriever; `embedder` settings are not wired into this path. Pinecone/Qdrant need an embedding-aware custom adapter or application endpoint. Semantic matching uses word frequencies, not neural embeddings. CLI/Python baseline promotion now defaults to every evaluated question passing. Legacy references remain readable but require reviewed rebaselining for strict comparison. JSON is machine-readable, and the pytest plugin supports configured adapters and a shared report fixture. Explain does not add rank/distance deltas.
 
 ## Development
 

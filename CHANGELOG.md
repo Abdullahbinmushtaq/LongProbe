@@ -5,7 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.3] - Unreleased
+## [0.2.0] - Unreleased
+
+### Added
+- Versioned evaluation contracts and shared JSON/SQLite report validation; legacy rows remain readable without automatic rewriting.
+- Explicit per-question thresholds, baseline quality policy, reference identity, and coverage/requirement/evidence differences.
+- `check --baseline LABEL`, `check --no-compare`, JSON baseline-save output, and read-only `report PATH` rendering.
+- Supported session-scoped `longprobe_report` pytest fixture and automatic opt-in quality enforcement.
+- Trusted baseline artifact restoration and one-evaluation CI feedback with retained diagnostics.
+
+### Changed
+- CLI and Python share evaluation and baseline promotion; the default requires every evaluated approved question to pass.
+- Equal-recall loss of required evidence is a regression. Changed contracts/coverage and metadata-free references cannot certify strict comparison.
+- Parsed JSON commands emit one stdout document; handled failures use safe error envelopes and documented exit categories.
+- Reusable CI honors package version selection and only relaxes completed quality failures when explicitly configured.
+
+### Migration
+- Back up old baseline databases and explicitly establish reviewed new-format references; no SQL table migration is required.
+- Global threshold overrides preserve explicit per-question thresholds. Aggregate promotion requires an explicit policy selection.
+- Adopt `longprobe_report` instead of private pytest config assignments; old named-decorator/rank-delta changelog claims are not implemented interfaces.
+- See [v0.2.0 release notes](docs/releases/v0.2.0.md) for format, exit-code, fixture, and baseline changes. Hosted CI/publication remain pending.
+
+## [0.1.3] - Local reliability milestone (unpublished)
 
 ### Fixed
 - Runtime version now derives from installed package metadata; base startup keeps optional SDKs lazy and missing SDK calls give installation guidance.
