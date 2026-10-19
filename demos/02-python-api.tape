@@ -11,15 +11,13 @@ Set TypingSpeed 100ms
 Hide
 Type "source demos/.demo_venv/bin/activate"
 Enter
-Type "cd demo_run"
-Enter
 Type "export PS1='$ '"
 Enter
 Type "clear"
 Enter
 Show
 
-Type "python monitor_rag_quality.py"
+Type "python demo_run/monitor_rag_quality.py"
 Sleep 800ms
 Enter
 Sleep 12s

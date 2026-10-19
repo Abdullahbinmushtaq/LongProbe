@@ -1,131 +1,64 @@
-# 🎬 LongProbe Demo Recordings
+# LongProbe terminal demonstrations
 
-This directory contains scripts to generate animated terminal demos for LongProbe.
+The recording scripts demonstrate the implemented v0.2.0 Python interface with fixed sample documents and an in-memory retriever. They exercise real selection, scoring, comparison, and policy-gated SQLite promotion. They do not benchmark a vector database or call an embedding model.
 
-## 🛠️ Setup
+## Run the scenarios
 
-Install VHS (by Charm):
+From the repository root, with Python 3.11 or newer:
 
 ```bash
-# macOS
-brew install vhs
-
-# Linux
-sudo snap install vhs
-
-# Or with Go
-go install github.com/charmbracelet/vhs@latest
+make setup-demos
+make check-demos
 ```
 
-## 📹 Generate Demos
+Setup installs this checkout into `demos/.demo_venv`; it does not install an older published package or download embedding models. Package installation may need network access. Once installed, these scenarios run without external services. Each run uses temporary golden/configuration/baseline files and cleans them up afterward.
+
+Run an individual scenario with recording pauses:
 
 ```bash
-# Generate all demos
+demos/.demo_venv/bin/python demo_run/complete_workflow.py
+demos/.demo_venv/bin/python demo_run/monitor_rag_quality.py
+demos/.demo_venv/bin/python demo_run/detect_regressions.py
+```
+
+Add `--no-delay` for immediate output.
+
+## What the recordings show
+
+| Recording source | Scenario |
+|---|---|
+| `01-complete-workflow.tape` | Draft candidates, source-review explanation, approved cases, eligible promotion, and missing-evidence regression |
+| `01-quick-check.tape` | One evaluation with per-question results and shared quality verdict |
+| `02-python-api.tape` | The Python report, 85% threshold, and visible absence of a historical reference |
+| `03-baseline-tracking.tape` | Explicit `production-v1` selection, compatibility, regression/improvement counts, and quality failure |
+
+The workflow uses fixed sample evidence supplied with the script. Its scripted status transition illustrates a review decision; it does not perform human approval. Real generated or captured evidence must be checked against source documents before approval.
+
+The regression scenarios deliberately remove refund evidence after promotion. The second evaluation reports one regression and failed quality. The script checks this expected result and exits successfully; the illustrated passing-quality assertion would fail in an application test. The saved reference is preserved.
+
+## Regenerate README and documentation GIFs
+
+Install [VHS and its recording prerequisites](https://github.com/charmbracelet/vhs#installation), including ttyd, Chromium, and ffmpeg. Then run from the repository root:
+
+```bash
 make demos
-
-# Or generate individually
-vhs demos/01-quick-start.tape
-vhs demos/02-detect-regression.tape
-vhs demos/03-pytest-integration.tape
-vhs demos/04-generate-questions.tape
 ```
 
-## 📦 Output
+This records the four existing tapes into `demos/` and copies the resulting GIFs into both `assets/` and `docs/assets/`. Commit the tapes, scripts, and regenerated assets together when recording tools are available. Changing a script alone does not update an existing GIF.
 
-Generated files will be in `demos/` directory:
-- `01-quick-start.gif` - Quick start guide
-- `02-detect-regression.gif` - Regression detection
-- `03-pytest-integration.gif` - Pytest integration
-- `04-generate-questions.gif` - Auto-generate questions
+The v0.2.0 source update was executed and verified locally, but the existing GIFs have not yet been regenerated because VHS is absent in the implementation environment. They remain historical illustrations until that recording step is completed.
 
-## 🎨 Customization
-
-Edit `.tape` files to customize:
-- `Set Theme` - Color scheme (Dracula, Monokai, etc.)
-- `Set FontSize` - Text size
-- `Set Width/Height` - Dimensions
-- `Set TypingSpeed` - Animation speed
-- `Output` - Output format (gif, mp4, webm)
-
-## 📚 VHS Documentation
-
-- [VHS GitHub](https://github.com/charmbracelet/vhs)
-- [VHS Examples](https://github.com/charmbracelet/vhs/tree/main/examples)
-
-## 🔄 Updating Demos
-
-When LongProbe features change:
-1. Edit the corresponding `.tape` script
-2. Regenerate: `vhs demos/XX-demo-name.tape`
-3. Commit both `.tape` and `.gif` files
-
-## 📝 Demo Scripts
-
-### 01-quick-start.tape
-Shows basic installation and first test run.
-
-### 02-detect-regression.tape
-Demonstrates regression detection with baseline comparison.
-
-### 03-pytest-integration.tape
-Shows how to integrate LongProbe with pytest.
-
-### 04-generate-questions.tape
-Demonstrates auto-generating golden questions from documents.
-
-## 🎯 Alternative: asciinema
-
-If you prefer asciinema (lighter weight):
+To record individually:
 
 ```bash
-# Install
-pip install asciinema
-
-# Record
-asciinema rec demo.cast
-
-# Upload (gets shareable link)
-asciinema upload demo.cast
-
-# Embed in README
-[![asciicast](https://asciinema.org/a/XXXXX.svg)](https://asciinema.org/a/XXXXX)
+vhs demos/01-complete-workflow.tape
+vhs demos/01-quick-check.tape
+vhs demos/02-python-api.tape
+vhs demos/03-baseline-tracking.tape
 ```
 
-## 📊 File Sizes
+Individual recording does not perform the asset-copy steps. Use `make demos` to synchronize the files displayed in the README and documentation.
 
-GIFs can be large. Consider:
-- **GIF**: Easy to embed, larger file size (~2-5MB)
-- **MP4**: Smaller, requires video player (~500KB)
-- **WebM**: Smallest, best quality (~300KB)
-- **SVG**: Smallest, but limited browser support
+## Editing presentation
 
-To generate MP4 instead of GIF:
-
-```bash
-# Change in .tape file
-Output demos/01-quick-start.mp4
-```
-
-## 🚀 GitHub README Integration
-
-Add to README.md:
-
-```markdown
-## 🎬 Quick Demo
-
-![LongProbe Demo](demos/01-quick-start.gif)
-
-<details>
-<summary>More Demos</summary>
-
-### Regression Detection
-![Regression Detection](demos/02-detect-regression.gif)
-
-### Pytest Integration
-![Pytest Integration](demos/03-pytest-integration.gif)
-
-### Auto-Generate Questions
-![Generate Questions](demos/04-generate-questions.gif)
-
-</details>
-```
+Keep the existing theme, font, dimensions, and README layout. Adjust tape pauses if a scenario needs more reading time. Display the quality verdict and comparison compatibility alongside recall; a good average or zero regression count alone does not establish deployment readiness.

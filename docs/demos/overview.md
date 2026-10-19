@@ -1,6 +1,6 @@
 # Demos Overview
 
-See LongProbe in action with these live demonstrations showcasing key features and workflows.
+See LongProbe evaluation and baseline workflows through reproducible sample demonstrations. Embedded GIFs remain historical recordings until regenerated; the v0.2.0 script sources have been updated and verified.
 
 ## Available Demos
 
@@ -54,9 +54,9 @@ cd LongProbe
 bash demos/setup_demo_env.sh
 
 # Run any demo
-python demo_run/complete_workflow.py
-python demo_run/monitor_rag_quality.py
-python demo_run/detect_regressions.py
+demos/.demo_venv/bin/python demo_run/complete_workflow.py
+demos/.demo_venv/bin/python demo_run/monitor_rag_quality.py
+demos/.demo_venv/bin/python demo_run/detect_regressions.py
 ```
 
 ## Use Cases Covered
@@ -77,7 +77,7 @@ Choose a demo to explore:
 
     ---
 
-    Full workflow with auto-capture and regression detection
+    Draft review, explicit baseline promotion, and regression detection
 
     [:octicons-arrow-right-24: View Demo](complete-workflow.md)
 

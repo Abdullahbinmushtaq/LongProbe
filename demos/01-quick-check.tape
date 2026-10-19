@@ -11,15 +11,13 @@ Set TypingSpeed 100ms
 Hide
 Type "source demos/.demo_venv/bin/activate"
 Enter
-Type "cd demo_run"
-Enter
 Type "export PS1='$ '"
 Enter
 Type "clear"
 Enter
 Show
 
-Type "python test_rag_retrieval.py"
+Type "python demo_run/test_rag_retrieval.py"
 Sleep 800ms
 Enter
 Sleep 10s
