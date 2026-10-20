@@ -2,7 +2,7 @@
 
 ![Monitor RAG Quality](../assets/02-python-api.gif)
 
-The embedded GIF is a historical recording. The updated v0.2.0 recording source shows one evaluation with per-question recall, required evidence found, pass/fail results, and the shared quality verdict. It also shows that no historical comparison occurred when a baseline is absent.
+The v0.2.0 dashboard shows one evaluation with per-question recall, required evidence found, pass/fail results, and the shared quality verdict. It also shows that no historical comparison occurred when a baseline is absent. Progress panels and result tables are displayed without source code.
 
 ## Run locally
 

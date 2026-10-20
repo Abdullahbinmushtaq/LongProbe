@@ -8,10 +8,11 @@ import time
 from pathlib import Path
 
 import yaml
-from rich.console import Console
+from rich.console import Console, Group
+from rich.live import Live
 from rich.panel import Panel
-from rich.syntax import Syntax
 from rich.table import Table
+from rich.text import Text
 
 from longprobe import LongProbe
 from longprobe.adapters import AbstractRetrieverAdapter
@@ -41,51 +42,75 @@ class SampleRetriever(AbstractRetrieverAdapter):
         ][:top_k]
 
 
-def show_report(console, report):
-    table = Table(title="Retrieval results")
-    for heading in ("Question", "Recall", "Required evidence", "Result"):
-        table.add_column(heading)
+def results_table(report):
+    table = Table(show_header=True, box=None, expand=True, padding=(0, 1))
+    table.add_column("Question", ratio=3)
+    table.add_column("Recall", justify="right")
+    table.add_column("Evidence", justify="center")
+    table.add_column("Status", justify="center")
     for result in report.results:
+        style = "green" if result.passed else "red"
         table.add_row(
-            result.question_id,
-            f"{result.recall_score:.0%}",
+            result.question,
+            f"[{style}]{result.recall_score:.1%}[/{style}]",
             f"{len(result.found_chunks)}/{len(result.required_chunks)}",
-            "PASS" if result.passed else "FAIL",
+            f"[{style}]{'✓ PASS' if result.passed else '✗ FAIL'}[/{style}]",
         )
-    console.print(table)
-    passed = report.quality["passed"]
-    console.print(
-        Panel(
-            f"Overall recall: {report.overall_recall:.1%}\n"
-            f"Pass rate: {report.pass_rate:.1%}\n"
-            f"Quality: {'PASS' if passed else 'FAIL'}\n"
-            f"Reference status: {report.baseline_identity['status']}",
-            title="Shared quality verdict",
-            border_style="green" if passed else "red",
-        )
-    )
-    for reason in report.quality["reasons"]:
-        console.print(reason, style="red")
+    return table
+
+
+def progress_table(steps):
+    table = Table(show_header=False, box=None, expand=True, padding=(0, 2))
+    table.add_column("Step", width=27, style="bold")
+    table.add_column("Status", width=3)
+    table.add_column("Details", ratio=1)
+    for label, status, detail in steps:
+        icon, style = {
+            "pending": ("○", "dim"),
+            "running": ("◌", "cyan"),
+            "done": ("✓", "green"),
+            "detected": ("!", "yellow"),
+        }[status]
+        table.add_row(label, f"[{style}]{icon}[/{style}]", Text(detail, style=style))
+    return Panel(table, title="Workflow progress", border_style="cyan")
 
 
 def run_demo(mode):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--no-delay", action="store_true", help="Run without recording pauses")
     args = parser.parse_args()
-    console = Console()
+    console = Console(no_color=False)
 
-    def command(code):
-        console.print(Syntax(code, "python", theme="monokai", word_wrap=True))
+    def pause(seconds=1.0):
         if not args.no_delay:
-            time.sleep(1.5)
+            time.sleep(seconds)
 
     title = {
-        "workflow": "Complete retrieval regression workflow",
-        "quality": "Monitor retrieval quality",
-        "regression": "Compare against a selected baseline",
+        "workflow": "Complete Workflow",
+        "quality": "Monitor RAG Quality",
+        "regression": "Detect Retrieval Regressions",
     }[mode]
-    console.print(Panel(f"LongProbe v0.2.0 | {title}", border_style="cyan"))
-    console.print("Synthetic sample data | temporary files | no external services", style="dim")
+    console.print(f"\n[bold cyan]🔬 LongProbe — {title}[/bold cyan]")
+    console.print("[dim]v0.2.0  •  Reviewed sample documents  •  Isolated demonstration[/dim]\n")
+    labels = {
+        "workflow": [
+            "1. Prepare Golden Questions",
+            "2. Review & Approve",
+            "3. Evaluate Retrieval",
+            "4. Save Baseline",
+            "5. Update Retrieval",
+            "6. Detect Regression",
+        ],
+        "quality": ["1. Connect Retriever", "2. Load Golden Questions", "3. Evaluate Retrieval"],
+        "regression": [
+            "1. Evaluate Retrieval",
+            "2. Save Baseline",
+            "3. Update Retrieval",
+            "4. Compare Baseline",
+        ],
+    }[mode]
+    steps = [(label, "pending", "Waiting…") for label in labels]
+    current = 0
 
     with tempfile.TemporaryDirectory(prefix="longprobe-demo-") as directory:
         root = Path(directory)
@@ -120,79 +145,128 @@ def run_demo(mode):
             )
         )
         adapter = SampleRetriever()
-        if mode == "workflow":
-            console.print("1. Prepare draft candidates from sample evidence", style="bold cyan")
-            console.print("Automatic retrieval alone does not establish correct evidence.")
-            command('question.status = "draft"')
-            console.print("2. Review source evidence before approval", style="bold cyan")
-            console.print(
-                "This scripted example uses fixed, pre-reviewed sample evidence. "
-                "In your project, a person must verify each requirement before approval."
+        with Live(progress_table(steps), console=console, refresh_per_second=10) as live:
+
+            def stage(detail, status="running", extra=None):
+                steps[current] = (labels[current], status, detail)
+                content = [progress_table(steps)]
+                if extra is not None:
+                    content.extend([Text(""), extra])
+                live.update(Group(*content), refresh=True)
+                pause()
+
+            if mode == "workflow":
+                stage("Preparing questions and candidate evidence…")
+                stage("3 draft questions prepared", "done")
+                current += 1
+                evidence = Table(show_header=False, box=None, expand=True)
+                evidence.add_column("Question", ratio=1)
+                evidence.add_column("Source evidence", ratio=2)
+                for _, question, text in CASES:
+                    evidence.add_row(question, text)
+                stage(
+                    "Review source evidence before approval",
+                    extra=Panel(evidence, title="Source review", border_style="blue"),
+                )
+                for question in suite.questions:
+                    question.status = "approved"
+                suite.to_yaml(str(goldens_path))
+                stage(
+                    "3 approved cases • illustrative approval of reviewed sample evidence", "done"
+                )
+                current += 1
+            elif mode == "quality":
+                stage("Connecting to the sample retriever…")
+                stage("Sample retriever ready", "done")
+                current += 1
+                stage("Loading reviewed golden questions…")
+                stage("3 approved cases • 85% per-question threshold", "done")
+                current += 1
+
+            stage("Checking required evidence for each question…")
+            probe = LongProbe(
+                adapter=adapter, goldens_path=str(goldens_path), config_path=str(config_path)
             )
-            table = Table("Question", "Reviewed source evidence")
-            for _, question, evidence in CASES:
-                table.add_row(question, evidence)
-            console.print(table)
-            for question in suite.questions:
-                question.status = "approved"
-            suite.to_yaml(str(goldens_path))
-            command(
-                'question.status = "approved"  # Only after source review\nsuite.to_yaml(goldens_path)'
+            report = probe.run()
+            assert report.quality["passed"], report.quality["reasons"]
+            assert adapter.calls == len(CASES)
+            stage(
+                "Recall: 100.0% • Passed: 3 / 3",
+                "done",
+                Panel(results_table(report), title="Retrieval results", border_style="green"),
             )
 
-        console.print("Evaluate approved questions at an 85% threshold", style="bold cyan")
-        command(
-            "probe = LongProbe(adapter=adapter, goldens_path=goldens_path, config_path=config_path)\n"
-            "report = probe.run()\n"
-            'assert report.quality["passed"], report.quality["reasons"]'
-        )
-        probe = LongProbe(
-            adapter=adapter, goldens_path=str(goldens_path), config_path=str(config_path)
-        )
-        report = probe.run()
-        show_report(console, report)
-        assert report.quality["passed"], report.quality["reasons"]
-        assert adapter.calls == len(CASES)
-        if mode == "quality":
-            console.print(
-                "Retrieval quality checks passed for these three reviewed cases.", style="green"
-            )
-            console.print("One evaluation; no baseline was promoted automatically.")
-            return
+            if mode == "quality":
+                summary = Panel(
+                    "[bold green]✓ Retrieval quality checks passed[/bold green]\n"
+                    "Overall recall: 100.0%  •  Pass rate: 100.0%  •  Threshold: 85%\n"
+                    "[dim]One evaluation • No historical reference • No baseline saved automatically[/dim]",
+                    title="Quality summary",
+                    border_style="green",
+                )
+                live.update(
+                    Group(
+                        progress_table(steps),
+                        Text(""),
+                        Panel(results_table(report), title="Test results", border_style="cyan"),
+                        Text(""),
+                        summary,
+                    ),
+                    refresh=True,
+                )
+                pause(3)
+                return
 
-        console.print("Explicitly promote the eligible report", style="bold cyan")
-        command('probe.save_baseline(label="production-v1")')
-        probe.save_baseline(label="production-v1")
-        console.print("Baseline saved: production-v1 | policy: all_questions", style="green")
-        assert adapter.calls == len(CASES), "Promotion must reuse the retained evaluation"
-
-        console.print("Simulate a retrieval change: refund evidence is now missing", style="yellow")
-        adapter.missing.add("refund")
-        command(
-            'report2 = probe.run(baseline_label="production-v1")\n'
-            "diff = report2.comparison\n"
-            "print(f\"Regressions: {len(diff['regressions'])}\")\n"
-            "print(f\"Improvements: {len(diff['improvements'])}\")"
-        )
-        report2 = probe.run(baseline_label="production-v1")
-        diff = report2.comparison
-        show_report(console, report2)
-        console.print(f"Reference: {report2.baseline_identity['resolved_label']}")
-        console.print(f"Compatible: {diff['compatible']}")
-        console.print(f"Regressions: {len(diff['regressions'])}")
-        console.print(f"Improvements: {len(diff['improvements'])}")
-        for regression in diff["regressions"]:
-            console.print(
-                f"{regression['question_id']}: lost required evidence: "
-                f"{regression['newly_lost_chunks']}",
-                style="red",
+            current += 1
+            stage("Checking baseline eligibility…")
+            probe.save_baseline(label="production-v1")
+            assert adapter.calls == len(CASES)
+            stage("production-v1 saved • all approved questions passed", "done")
+            current += 1
+            stage("Simulating a retrieval pipeline change…")
+            adapter.missing.add("refund")
+            stage("Refund evidence removed from sample retrieval", "done")
+            current += 1
+            stage("Comparing against production-v1…")
+            report2 = probe.run(baseline_label="production-v1")
+            diff = report2.comparison
+            assert not report2.quality["passed"]
+            assert diff["compatible"] and len(diff["regressions"]) == 1
+            assert adapter.calls == 2 * len(CASES)
+            assert probe.baseline_store.load("production-v1").overall_recall == 1.0
+            steps[current] = (
+                labels[current],
+                "detected",
+                "1 regression detected • baseline preserved",
             )
-        command('assert report2.quality["passed"], report2.quality["reasons"]')
-        console.print(
-            "The quality assertion would fail: review the missing refund evidence.", style="red"
-        )
-        console.print("Expected demonstration failure; the trusted baseline remains unchanged.")
-        assert not report2.quality["passed"]
-        assert diff["compatible"] and len(diff["regressions"]) == 1
-        assert adapter.calls == 2 * len(CASES)
-        assert probe.baseline_store.load("production-v1").overall_recall == 1.0
+            comparison = Table(show_header=False, box=None, expand=True)
+            comparison.add_column("Metric", style="bold")
+            comparison.add_column("Value")
+            comparison.add_row("Reference", report2.baseline_identity["resolved_label"])
+            comparison.add_row("Compatibility", "[green]✓ Compatible[/green]")
+            comparison.add_row("Regressions", f"[red]{len(diff['regressions'])}[/red]")
+            comparison.add_row("Improvements", f"[green]{len(diff['improvements'])}[/green]")
+            comparison.add_row(
+                "Overall recall", f"100.0% → [yellow]{report2.overall_recall:.1%}[/yellow]"
+            )
+            lost = diff["regressions"][0]["newly_lost_chunks"][0]
+            verdict = Panel(
+                f"[bold red]✗ Retrieval quality checks failed[/bold red]\n"
+                f"Missing evidence: {lost}\n"
+                "[dim]Review the retrieval change. The trusted baseline remains unchanged.[/dim]",
+                title="Regression detected",
+                border_style="red",
+            )
+            live.update(
+                Group(
+                    progress_table(steps),
+                    Text(""),
+                    Panel(results_table(report2), title="Test results", border_style="cyan"),
+                    Text(""),
+                    Panel(comparison, title="Baseline comparison", border_style="cyan"),
+                    Text(""),
+                    verdict,
+                ),
+                refresh=True,
+            )
+            pause(3)

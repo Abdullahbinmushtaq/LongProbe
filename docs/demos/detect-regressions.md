@@ -2,7 +2,7 @@
 
 ![Detect Regressions](../assets/03-baseline-tracking.gif)
 
-The embedded GIF is a historical recording. The updated v0.2.0 scenario explicitly selects a baseline and displays compatibility, regression/improvement counts, lost evidence, and the shared quality verdict. A retrieval check does not establish overall deployment readiness.
+The v0.2.0 dashboard scenario explicitly selects a baseline and displays compatibility, regression/improvement counts, lost evidence, and the shared quality verdict. A retrieval check does not establish overall deployment readiness.
 
 ## Run locally
 

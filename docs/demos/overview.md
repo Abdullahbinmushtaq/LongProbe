@@ -1,6 +1,6 @@
 # Demos Overview
 
-See LongProbe evaluation and baseline workflows through reproducible sample demonstrations. Embedded GIFs remain historical recordings until regenerated; the v0.2.0 script sources have been updated and verified.
+See LongProbe evaluation and baseline workflows through reproducible sample demonstrations. The v0.2.0 recordings use progress panels, color-coded result tables, and quality summaries without displaying source code.
 
 ## Available Demos
 

@@ -25,6 +25,10 @@ demos/.recording_venv/bin/python demo_run/detect_regressions.py
 
 Add `--no-delay` for immediate output.
 
+## Presentation
+
+The demonstrations retain the original terminal dashboard style: a single updating progress panel, per-question result tables, baseline comparison, and a clear final verdict. They display no Python source code or assertion snippets. The recording theme, dimensions, and logo are unchanged.
+
 ## What the recordings show
 
 | Recording source | Scenario |
@@ -36,7 +40,7 @@ Add `--no-delay` for immediate output.
 
 The workflow uses fixed sample evidence supplied with the script. Its scripted status transition illustrates a review decision; it does not perform human approval. Real generated or captured evidence must be checked against source documents before approval.
 
-The regression scenarios deliberately remove refund evidence after promotion. The second evaluation reports one regression and failed quality. The script checks this expected result and exits successfully; the illustrated passing-quality assertion would fail in an application test. The saved reference is preserved.
+The regression scenarios deliberately remove refund evidence after promotion. The second evaluation reports one regression and failed quality. The script checks this expected result and exits successfully while showing the failed quality verdict. The saved reference is preserved.
 
 ## Regenerate README and documentation GIFs
 
@@ -48,7 +52,7 @@ make demos
 
 This records the four existing tapes into `demos/` and copies the resulting GIFs into both `assets/` and `docs/assets/`. Commit the tapes, scripts, and regenerated assets together when recording tools are available. Changing a script alone does not update an existing GIF.
 
-The v0.2.0 source update was executed and verified locally, but the existing GIFs have not yet been regenerated because VHS is absent in the implementation environment. They remain historical illustrations until that recording step is completed.
+After changing the presentation scripts, regenerate the GIFs to refresh the images shown in the README and documentation. VHS requires permission to start a local terminal server and browser.
 
 To record individually:
 

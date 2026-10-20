@@ -2,6 +2,7 @@ Output demos/01-complete-workflow.gif
 
 Set Shell bash
 Set FontSize 20
+Set Framerate 15
 Set Width 1800
 Set Height 1000
 Set Theme "Catppuccin Mocha"
