@@ -22,6 +22,6 @@ Show
 Type "python demo_run/complete_workflow.py"
 Sleep 800ms
 Enter
-Sleep 32s
+Sleep 20s
 
 Sleep 4s
