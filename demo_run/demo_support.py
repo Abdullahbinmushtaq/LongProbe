@@ -145,6 +145,8 @@ def run_demo(mode):
             )
         )
         adapter = SampleRetriever()
+        if mode == "quality":
+            adapter.missing.add("refund")
         with Live(progress_table(steps), console=console, refresh_per_second=10) as live:
 
             def stage(detail, status="running", extra=None):
@@ -188,21 +190,29 @@ def run_demo(mode):
                 adapter=adapter, goldens_path=str(goldens_path), config_path=str(config_path)
             )
             report = probe.run()
-            assert report.quality["passed"], report.quality["reasons"]
+            passed = sum(result.passed for result in report.results)
             assert adapter.calls == len(CASES)
+            if mode == "quality":
+                assert passed == 2 and len(report.results) == 3
+                assert not report.quality["passed"]
+                assert report.quality["failed_questions"] == ["refund"]
+            else:
+                assert report.quality["passed"], report.quality["reasons"]
             stage(
-                "Recall: 100.0% • Passed: 3 / 3",
-                "done",
-                Panel(results_table(report), title="Retrieval results", border_style="green"),
+                f"Recall: {report.overall_recall:.1%} • Passed: {passed} / {len(report.results)}",
+                "done" if report.quality["passed"] else "detected",
+                Panel(results_table(report), title="Retrieval results", border_style="cyan"),
             )
 
             if mode == "quality":
                 summary = Panel(
-                    "[bold green]✓ Retrieval quality checks passed[/bold green]\n"
-                    "Overall recall: 100.0%  •  Pass rate: 100.0%  •  Threshold: 85%\n"
+                    "[bold red]✗ Retrieval quality checks failed — 1 question needs attention[/bold red]\n"
+                    f"Overall recall: {report.overall_recall:.1%}  •  "
+                    f"Pass rate: {report.pass_rate:.1%}  •  Threshold: 85%\n"
+                    f"Missing evidence: {CASES[0][2]}\n"
                     "[dim]One evaluation • No historical reference • No baseline saved automatically[/dim]",
                     title="Quality summary",
-                    border_style="green",
+                    border_style="red",
                 )
                 live.update(
                     Group(

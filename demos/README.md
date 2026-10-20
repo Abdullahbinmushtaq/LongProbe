@@ -34,8 +34,8 @@ The demonstrations retain the original terminal dashboard style: a single updati
 | Recording source | Scenario |
 |---|---|
 | `01-complete-workflow.tape` | Draft candidates, source-review explanation, approved cases, eligible promotion, and missing-evidence regression |
-| `01-quick-check.tape` | One evaluation with per-question results and shared quality verdict |
-| `02-python-api.tape` | The Python report, 85% threshold, and visible absence of a historical reference |
+| `01-quick-check.tape` | One evaluation: two passing questions, one failing question, and a failed quality verdict |
+| `02-python-api.tape` | An 85% threshold, two passing questions, one failing question, and missing-evidence details |
 | `03-baseline-tracking.tape` | Explicit `production-v1` selection, compatibility, regression/improvement counts, and quality failure |
 
 The workflow uses fixed sample evidence supplied with the script. Its scripted status transition illustrates a review decision; it does not perform human approval. Real generated or captured evidence must be checked against source documents before approval.

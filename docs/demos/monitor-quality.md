@@ -13,7 +13,7 @@ make setup-demos
 demos/.recording_venv/bin/python demo_run/monitor_rag_quality.py
 ```
 
-The script uses three reviewed sample cases, an 85% threshold, and a deterministic in-memory adapter. It runs without an external service or optional vector SDK. Temporary files are removed after each run. Add `--no-delay` for immediate output.
+The script uses three reviewed sample cases, an 85% threshold, and a deterministic in-memory adapter. Refund evidence is deliberately omitted: two questions pass and one fails. Overall recall and pass rate are 66.7%, and the quality summary identifies the missing evidence. This is an expected demonstration failure; the script verifies it and exits successfully. It runs without an external service or optional vector SDK. Temporary files are removed after each run. Add `--no-delay` for immediate output.
 
 ## Inspect the verdict
 
