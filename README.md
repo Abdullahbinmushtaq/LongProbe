@@ -1,4 +1,26 @@
-<div align="center">
+<p align="center">
+  <img src="https://raw.githubusercontent.com/ENDEVSOLS/LongProbe/main/assets/longProbe-with-bg.png" alt="LongProbe Logo" width="320" />
+</p>
+
+<p align="center">
+  <strong>Sub-second RAG regression testing for production pipelines</strong>
+</p>
+
+<p align="center">
+  <a href="https://pypi.org/project/longprobe/"><img src="https://badge.fury.io/py/longprobe.svg" alt="PyPI version" /></a>
+  <a href="https://pepy.tech/projects/longprobe"><img src="https://static.pepy.tech/personalized-badge/longprobe?period=total&amp;units=international_system&amp;left_color=black&amp;right_color=green&amp;left_text=downloads" alt="PyPI Downloads" /></a>
+  <a href="https://pypi.org/project/longprobe/"><img src="https://img.shields.io/pypi/pyversions/longprobe.svg" alt="Python Versions" /></a>
+  <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT" /></a>
+  <a href="https://github.com/Abdullahbinmushtaq/LongProbe/actions/workflows/ci.yml"><img src="https://github.com/Abdullahbinmushtaq/LongProbe/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <a href="https://endevsols.github.io/LongProbe"><img src="https://img.shields.io/badge/docs-mkdocs-blue.svg" alt="Documentation" /></a>
+</p>
+
+<p align="center">
+  <a href="#quick-start">Quick Start</a> •
+  <a href="https://endevsols.github.io/LongProbe">Documentation</a> •
+  <a href="#python-api">Python API</a> •
+  <a href="#github-actions">CI/CD</a>
+</p>
 
 ---
 
@@ -30,7 +52,6 @@ Compare against an explicitly selected baseline, check compatibility, and identi
 
 ![Detect Regressions](https://raw.githubusercontent.com/Abdullahbinmushtaq/LongProbe/main/assets/03-baseline-tracking.gif)
 
-
 ## Why LongProbe?
 
 Every RAG developer faces the same silent killer: you refactor chunking strategy, upgrade LangChain, or add a new document — and your retrieval silently degrades. DeepEval and RAGChecker are heavyweight evaluation frameworks meant for batch analysis, not fast regression checks in a dev loop.
@@ -40,7 +61,7 @@ Every RAG developer faces the same silent killer: you refactor chunking strategy
 - ⚡ **Sub-second checks** on small golden sets
 - 🔍 **Exact diffs** showing which chunks were lost/gained
 - 📊 **Recall scores** with per-question breakdown
-- 💾 **Baseline tracking** to catch regressions over timeis i first pull 
+- 💾 **Baseline tracking** to catch regressions over time
 - 🧪 **pytest integration** for existing test suites
 - 🔌 **Pluggable adapters** for any vector store
 
@@ -158,7 +179,6 @@ baseline:
   quality_gate: all_questions
 ```
 
-
 ### Run Checks
 
 ```bash
@@ -181,23 +201,22 @@ longprobe check --output json
 longprobe check --output github
 ```
 
-
 ## CLI Reference
 
 ### Core Commands
 
 | Command                     | Description                                                        |
-| --------------------------- | ------------------------------------------------------------------ |
-| `longprobe init`          | Create starter configuration files                                 |
-| `longprobe check`         | Run probes against the golden set                                  |
-| `longprobe diff`          | Compare current results against baseline                           |
-| `longprobe baseline save` | Fresh approved-only evaluation and policy-gated baseline promotion |
-| `longprobe report PATH`   | Render a saved JSON report without retrieval                       |
-| `longprobe baseline list` | List all saved baselines                                           |
-| `longprobe watch`         | Watch golden file and re-run on changes                            |
-| `longprobe generate`      | Auto-generate Golden Questions from documents                      |
-| `longprobe capture`       | Capture candidate evidence from your retriever                     |
-| `longprobe edit`          | Review and approve draft questions                                 |
+| :-------------------------- | :----------------------------------------------------------------- |
+| `longprobe init`            | Create starter configuration files                                 |
+| `longprobe check`           | Run probes against the golden set                                  |
+| `longprobe diff`            | Compare current results against baseline                           |
+| `longprobe baseline save`   | Fresh approved-only evaluation and policy-gated baseline promotion |
+| `longprobe report PATH`     | Render a saved JSON report without retrieval                       |
+| `longprobe baseline list`   | List all saved baselines                                           |
+| `longprobe watch`           | Watch golden file and re-run on changes                            |
+| `longprobe generate`        | Auto-generate Golden Questions from documents                      |
+| `longprobe capture`         | Capture candidate evidence from your retriever                     |
+| `longprobe edit`            | Review and approve draft questions                                 |
 
 ### Examples
 
@@ -270,7 +289,6 @@ print(f"Improvements: {len(diff['improvements'])}")
 assert report2.quality["passed"], report2.quality["reasons"]
 ```
 
-
 ### With LangChain
 
 ```python
@@ -320,13 +338,13 @@ Alternatively, use `pytest --longprobe-fail-threshold 0.85` to enforce quality a
 LongProbe supports multiple vector stores and retrieval frameworks:
 
 | Adapter              | Type         | Configuration                  |
-| -------------------- | ------------ | ------------------------------ |
-| **ChromaDB**   | Direct       | `type: chroma`               |
-| **Pinecone**   | Direct       | `type: pinecone`             |
-| **Qdrant**     | Direct       | `type: qdrant`               |
-| **HTTP API**   | Direct       | `type: http`                 |
-| **LangChain**  | Programmatic | `LangChainRetrieverAdapter`  |
-| **LlamaIndex** | Programmatic | `LlamaIndexRetrieverAdapter` |
+| :------------------- | :----------- | :----------------------------- |
+| **ChromaDB**         | Direct       | `type: chroma`                 |
+| **Pinecone**         | Direct       | `type: pinecone`               |
+| **Qdrant**           | Direct       | `type: qdrant`                 |
+| **HTTP API**         | Direct       | `type: http`                   |
+| **LangChain**        | Programmatic | `LangChainRetrieverAdapter`    |
+| **LlamaIndex**       | Programmatic | `LlamaIndexRetrieverAdapter`   |
 
 ### ChromaDB Example
 
@@ -407,9 +425,15 @@ uv run ruff format src/
 ## How It Works
 
 ```
-goldens.yaml → GoldenSet → RetrieverAdapter → RecallScorer
-                                                                      ↓
-                                                                BaselineStore → DiffReporter
+Reviewed golden questions
+            ↓
+     Retriever adapter
+            ↓
+       Recall scoring
+            ↓
+    Baseline comparison
+            ↓
+  Quality verdict + report
 ```
 
 1. **Define** your Golden Questions + Required Fact Chunks in YAML
@@ -433,4 +457,8 @@ MIT License — see [LICENSE](LICENSE) for details.
 
 ---
 
-<div align="center">
+<p align="center">
+  <a href="https://endevsols.com">Website</a> •
+  <a href="https://github.com/ENDEVSOLS/LongProbe">GitHub</a> •
+  <a href="https://endevsols.github.io/LongProbe">Documentation</a>
+</p>
