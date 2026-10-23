@@ -184,10 +184,10 @@ mkdocs build
 (For maintainers)
 
 1. Update `CHANGELOG.md`, set the version in `pyproject.toml`, and regenerate any changed demo GIFs.
-2. Commit the source changes and updated `assets/*.gif` files. The checkout README keeps local image links for local and GitHub previews.
+2. Commit the source changes and updated `assets/*.gif` files. The checkout README uses public GIF links from the configured repository’s `main` branch. Push changed assets there so previews show the latest published recordings.
 3. Push the release commit and matching `v<version>` tag to the public image repository configured in `[tool.hatch.metadata.hooks.custom]`. It currently points to `Abdullahbinmushtaq/LongProbe`; change `image-base-url` if another repository will host release images.
-4. Build with `uv build`. The metadata hook converts local GIF links to public URLs under the matching version tag in the wheel and source-distribution descriptions. It does not edit `README.md` or upload images.
-5. Run `uv run python examples/verify_pypi_readme.py` to check both distribution descriptions and confirm that the local README still uses local links.
+4. Build with `uv build`. The metadata hook pins public or local GIF links to public URLs under the matching version tag in the wheel and source-distribution descriptions. It does not edit `README.md` or upload images.
+5. Run `uv run python examples/verify_pypi_readme.py` to check both distribution descriptions and confirm that package builds preserve the checkout README.
 6. Run `uv run python examples/verify_pypi_readme.py --check-public` before uploading to PyPI. This downloads the tagged public images and checks that they match your local release assets. The tag workflow runs this check before creating its GitHub release. A version change or PyPI upload alone does not publish GitHub assets. The existing tag workflow builds the package and creates a GitHub release; it does not upload to PyPI.
 
 For example, package version `0.2.0` produces image URLs such as:

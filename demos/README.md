@@ -69,6 +69,8 @@ Individual recording does not perform the asset-copy steps. Use `make demos` to 
 
 Keep the existing theme, font, dimensions, and README layout. Adjust tape pauses if a scenario needs more reading time. Display the quality verdict and comparison compatibility alongside recall; a good average or zero regression count alone does not establish deployment readiness.
 
-## Local previews and PyPI images
+## Public README and PyPI images
 
-The root README uses local `assets/*.gif` links, so its preview immediately shows regenerated files. Package builds automatically replace those image links in the distribution description with public URLs using the package version's Git tag. The local README stays unchanged. See the [release process](../docs/contributing.md#release-process) for the configured image repository, tag requirement, and verification command.
+The root README uses public GIF URLs from `Abdullahbinmushtaq/LongProbe/main`. Push updated assets to that repository to refresh the published recordings. Open the local files directly to preview changes before pushing.
+
+Package builds pin these images to the package version's Git tag, keeping older PyPI descriptions stable. The checkout README stays unchanged during builds. See the [release process](../docs/contributing.md#release-process) for tag requirements and verification commands.

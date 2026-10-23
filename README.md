@@ -16,19 +16,19 @@ LongProbe is a **sub-second RAG regression harness**. Define your Golden Questio
 
 Review golden evidence, save a trusted baseline, and detect missing evidence with a Before / After / Change results table.
 
-![Complete Workflow](assets/01-complete-workflow.gif)
+![Complete Workflow](https://raw.githubusercontent.com/Abdullahbinmushtaq/LongProbe/main/assets/01-complete-workflow.gif)
 
 ### Monitor RAG Quality
 
 Inspect recall percentages, evidence found / required, and quality results: two passing questions and one deliberate failure.
 
-![Monitor RAG Quality](assets/02-python-api.gif)
+![Monitor RAG Quality](https://raw.githubusercontent.com/Abdullahbinmushtaq/LongProbe/main/assets/02-python-api.gif)
 
 ### Detect Regressions
 
 Compare against an explicitly selected baseline, check compatibility, and identify lost evidence and regression counts.
 
-![Detect Regressions](assets/03-baseline-tracking.gif)
+![Detect Regressions](https://raw.githubusercontent.com/Abdullahbinmushtaq/LongProbe/main/assets/03-baseline-tracking.gif)
 
 
 ## Why LongProbe?
