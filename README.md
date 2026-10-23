@@ -32,17 +32,17 @@ LongProbe is a **sub-second RAG regression harness**. Define your Golden Questio
 ### Complete Workflow
 Full retrieval regression workflow: review golden evidence, run checks, save a trusted baseline, and detect regressions.
 
-![Complete Workflow](assets/01-complete-workflow.gif)
+![Complete Workflow](https://raw.githubusercontent.com/ENDEVSOLS/LongProbe/main/assets/01-complete-workflow.gif)
 
 ### Monitor RAG Quality
 Detailed quality monitoring with Python API and comprehensive results.
 
-![Monitor RAG Quality](assets/02-python-api.gif)
+![Monitor RAG Quality](https://raw.githubusercontent.com/ENDEVSOLS/LongProbe/main/assets/02-python-api.gif)
 
 ### Detect Regressions
 Baseline comparison and retrieval regression detection for the reviewed golden suite.
 
-![Detect Regressions](assets/03-baseline-tracking.gif)
+![Detect Regressions](https://raw.githubusercontent.com/ENDEVSOLS/LongProbe/main/assets/03-baseline-tracking.gif)
 
 The demos use progress panels, result tables, and quality summaries with no source code displayed. See the [v0.2.0 guide](docs/releases/v0.2.0.md) for quality gates and comparison rules.
 
