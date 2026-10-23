@@ -3,6 +3,7 @@ Output demos/03-baseline-tracking.gif
 Set Shell bash
 Set FontSize 20
 Set Framerate 15
+Set PlaybackSpeed 2
 Set Width 1800
 Set Height 1000
 Set Theme "Catppuccin Mocha"

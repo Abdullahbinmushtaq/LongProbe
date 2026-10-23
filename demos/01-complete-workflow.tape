@@ -8,7 +8,7 @@ Set Height 1000
 Set Theme "Catppuccin Mocha"
 Set Padding 40
 Set TypingSpeed 150ms
-Set PlaybackSpeed 0.75
+Set PlaybackSpeed 1.5
 
 Hide
 Type "source demos/.recording_venv/bin/activate"
