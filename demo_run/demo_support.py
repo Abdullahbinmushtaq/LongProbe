@@ -158,8 +158,14 @@ def run_demo(mode):
                 pause()
 
             if mode == "workflow":
-                stage("Preparing questions and candidate evidence…")
-                stage("3 draft questions prepared", "done")
+                questions = Table(show_header=False, box=None, expand=True)
+                questions.add_column("Question", ratio=3)
+                questions.add_column("Status", width=10)
+                for _, question, _ in CASES:
+                    questions.add_row(question, "[yellow]DRAFT[/yellow]")
+                candidates = Panel(questions, title="Golden questions", border_style="blue")
+                stage("Preparing questions and candidate evidence…", extra=candidates)
+                stage("3 draft questions prepared", "done", candidates)
                 current += 1
                 evidence = Table(show_header=False, box=None, expand=True)
                 evidence.add_column("Question", ratio=1)
@@ -259,6 +265,40 @@ def run_demo(mode):
             comparison.add_row(
                 "Overall recall", f"100.0% → [yellow]{report2.overall_recall:.1%}[/yellow]"
             )
+            comparison_title = "Baseline comparison"
+            if mode == "workflow":
+                comparison = Table(show_header=True, box=None, expand=True)
+                comparison.add_column("Metric", style="bold", ratio=2)
+                comparison.add_column("Before", justify="right")
+                comparison.add_column("After", justify="right")
+                comparison.add_column("Change", justify="right")
+                comparison.add_row(
+                    "Overall recall",
+                    f"[green]{report.overall_recall:.1%}[/green]",
+                    f"[yellow]{report2.overall_recall:.1%}[/yellow]",
+                    f"[red]{report2.overall_recall - report.overall_recall:+.1%}[/red]",
+                )
+                comparison.add_row(
+                    "Pass rate",
+                    f"[green]{report.pass_rate:.1%}[/green]",
+                    f"[yellow]{report2.pass_rate:.1%}[/yellow]",
+                    f"[red]{report2.pass_rate - report.pass_rate:+.1%}[/red]",
+                )
+                failed_before = sum(not result.passed for result in report.results)
+                failed_after = sum(not result.passed for result in report2.results)
+                comparison.add_row(
+                    "Failed questions",
+                    str(failed_before),
+                    f"[red]{failed_after}[/red]",
+                    f"[red]+{failed_after - failed_before}[/red]",
+                )
+                comparison.add_row(
+                    "Quality verdict", "[green]PASS[/green]", "[red]FAIL[/red]", "Review required"
+                )
+                comparison.caption = f"Regressions: {len(diff['regressions'])}  •  Improvements: {len(diff['improvements'])}"
+                comparison_title = (
+                    f"Before / after — {report2.baseline_identity['resolved_label']} • Compatible"
+                )
             lost = diff["regressions"][0]["newly_lost_chunks"][0]
             verdict = Panel(
                 f"[bold red]✗ Retrieval quality checks failed[/bold red]\n"
@@ -273,7 +313,7 @@ def run_demo(mode):
                     Text(""),
                     Panel(results_table(report2), title="Test results", border_style="cyan"),
                     Text(""),
-                    Panel(comparison, title="Baseline comparison", border_style="cyan"),
+                    Panel(comparison, title=comparison_title, border_style="cyan"),
                     Text(""),
                     verdict,
                 ),
