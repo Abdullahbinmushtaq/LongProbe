@@ -4,6 +4,8 @@
 
 The v0.2.0 dashboard shows one evaluation with per-question recall, required evidence found, pass/fail results, and the shared quality verdict. It also shows that no historical comparison occurred when a baseline is absent. Progress panels and result tables are displayed without source code.
 
+Evidence is displayed as **found / required**, alongside recall percentage and PASS/FAIL. For example, **0 / 1** means zero of one required items was retrieved, giving **0% recall**. Similarity scores are not correctness percentages and are not displayed by this synthetic demonstration.
+
 ## Run locally
 
 From the repository root:

@@ -46,14 +46,14 @@ def results_table(report):
     table = Table(show_header=True, box=None, expand=True, padding=(0, 1))
     table.add_column("Question", ratio=3)
     table.add_column("Recall", justify="right")
-    table.add_column("Evidence", justify="center")
+    table.add_column("Evidence found / required", justify="center")
     table.add_column("Status", justify="center")
     for result in report.results:
         style = "green" if result.passed else "red"
         table.add_row(
             result.question,
             f"[{style}]{result.recall_score:.1%}[/{style}]",
-            f"{len(result.found_chunks)}/{len(result.required_chunks)}",
+            f"{len(result.found_chunks)} / {len(result.required_chunks)}",
             f"[{style}]{'✓ PASS' if result.passed else '✗ FAIL'}[/{style}]",
         )
     return table

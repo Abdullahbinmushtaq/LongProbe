@@ -27,7 +27,7 @@ Add `--no-delay` for immediate output.
 
 ## Presentation
 
-The demonstrations retain the original terminal dashboard style: a single updating progress panel, per-question result tables, baseline comparison, and a clear final verdict. They display no Python source code or assertion snippets. The recording theme, dimensions, and logo are unchanged.
+The demonstrations retain the original terminal dashboard style: a single updating progress panel, per-question result tables, baseline comparison, and a clear final verdict. They display no Python source code or assertion snippets. The recording theme, dimensions, and logo are unchanged. Each result displays recall percentage, evidence found / required, and PASS/FAIL together. For example, `0.0% | 0 / 1 | FAIL` means the one required evidence item was not found; `100.0% | 1 / 1 | PASS` means it was found. Synthetic similarity scores are not displayed.
 
 ## What the recordings show
 
