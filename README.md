@@ -1,25 +1,8 @@
 <div align="center">
 
-<p align="center"><img src="https://raw.githubusercontent.com/ENDEVSOLS/LongProbe/main/assets/longProbe-with-bg.png" alt="LongProbe Logo" width="320"/></p>
-
-**Sub-second RAG regression testing for production pipelines**
-
-[![PyPI version](https://badge.fury.io/py/longprobe.svg)](https://badge.fury.io/py/longprobe)
-[![PyPI Downloads](https://static.pepy.tech/personalized-badge/longprobe?period=total&units=international_system&left_color=black&right_color=green&left_text=downloads)](https://pepy.tech/projects/longprobe)
-[![Python Versions](https://img.shields.io/pypi/pyversions/longprobe.svg)](https://pypi.org/project/longprobe/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![CI](https://github.com/ENDEVSOLS/LongProbe/workflows/LongProbe%20CI/badge.svg)](https://github.com/ENDEVSOLS/LongProbe/actions)
-[![Documentation](https://img.shields.io/badge/docs-mkdocs-blue.svg)](https://endevsols.github.io/LongProbe)
-
-[Quick Start](#quick-start) • [Documentation](https://endevsols.github.io/LongProbe) • [Python API](#python-api) • [CI/CD](#github-actions)
-
-</div>
-
 ---
 
 ## Overview
-
-This checkout targets **v0.2.0**. Use an editable checkout or the built wheel for these changes until publication. See the [release and migration notes](docs/releases/v0.2.0.md).
 
 > "Did my last commit break retrieval?" — now you know in seconds.
 
@@ -47,7 +30,6 @@ Compare against an explicitly selected baseline, check compatibility, and identi
 
 ![Detect Regressions](assets/03-baseline-tracking.gif)
 
-The demos use progress panels, result tables, and quality summaries with no source code displayed. All recordings play at twice their original speed. See the [v0.2.0 guide](docs/releases/v0.2.0.md) for quality gates and comparison rules.
 
 ## Why LongProbe?
 
@@ -58,7 +40,7 @@ Every RAG developer faces the same silent killer: you refactor chunking strategy
 - ⚡ **Sub-second checks** on small golden sets
 - 🔍 **Exact diffs** showing which chunks were lost/gained
 - 📊 **Recall scores** with per-question breakdown
-- 💾 **Baseline tracking** to catch regressions over time
+- 💾 **Baseline tracking** to catch regressions over timeis i first pull 
 - 🧪 **pytest integration** for existing test suites
 - 🔌 **Pluggable adapters** for any vector store
 
@@ -176,7 +158,6 @@ baseline:
   quality_gate: all_questions
 ```
 
-Baseline promotion requires every evaluated approved question to pass by default. Per-question thresholds and an explicit aggregate promotion policy are available in the [configuration guide](docs/getting-started/configuration.md).
 
 ### Run Checks
 
@@ -200,24 +181,23 @@ longprobe check --output json
 longprobe check --output github
 ```
 
-Parsed JSON commands emit one stdout object. Evaluation exit codes distinguish quality failures (`1`), invalid or incompatible setup (`2`), and execution failures (`3`); see the [CLI reference](docs/guide/cli-reference.md).
 
 ## CLI Reference
 
 ### Core Commands
 
-| Command | Description |
-|---------|-------------|
-| `longprobe init` | Create starter configuration files |
-| `longprobe check` | Run probes against the golden set |
-| `longprobe diff` | Compare current results against baseline |
+| Command                     | Description                                                        |
+| --------------------------- | ------------------------------------------------------------------ |
+| `longprobe init`          | Create starter configuration files                                 |
+| `longprobe check`         | Run probes against the golden set                                  |
+| `longprobe diff`          | Compare current results against baseline                           |
 | `longprobe baseline save` | Fresh approved-only evaluation and policy-gated baseline promotion |
-| `longprobe report PATH` | Render a saved JSON report without retrieval |
-| `longprobe baseline list` | List all saved baselines |
-| `longprobe watch` | Watch golden file and re-run on changes |
-| `longprobe generate` | Auto-generate Golden Questions from documents |
-| `longprobe capture` | Capture candidate evidence from your retriever |
-| `longprobe edit` | Review and approve draft questions |
+| `longprobe report PATH`   | Render a saved JSON report without retrieval                       |
+| `longprobe baseline list` | List all saved baselines                                           |
+| `longprobe watch`         | Watch golden file and re-run on changes                            |
+| `longprobe generate`      | Auto-generate Golden Questions from documents                      |
+| `longprobe capture`       | Capture candidate evidence from your retriever                     |
+| `longprobe edit`          | Review and approve draft questions                                 |
 
 ### Examples
 
@@ -290,7 +270,6 @@ print(f"Improvements: {len(diff['improvements'])}")
 assert report2.quality["passed"], report2.quality["reasons"]
 ```
 
-Saving a baseline is explicit and never happens automatically after a passing check. Legacy references remain readable, but strict comparison requires a reviewed new-format reference. See [baseline management](docs/guide/baseline-management.md).
 
 ### With LangChain
 
@@ -336,19 +315,17 @@ def test_retrieval_quality(longprobe_report):
 
 Alternatively, use `pytest --longprobe-fail-threshold 0.85` to enforce quality automatically, even when tests do not request the report. Explicit per-question thresholds take precedence over that global threshold. Without an assertion or enforcement option, requesting a report alone does not enforce passing quality.
 
-See [pytest integration](docs/integrations/pytest.md) for custom adapter fixtures and session behavior.
-
 ## Retriever Adapters
 
 LongProbe supports multiple vector stores and retrieval frameworks:
 
-| Adapter | Type | Configuration |
-|---------|------|---------------|
-| **ChromaDB** | Direct | `type: chroma` |
-| **Pinecone** | Direct | `type: pinecone` |
-| **Qdrant** | Direct | `type: qdrant` |
-| **HTTP API** | Direct | `type: http` |
-| **LangChain** | Programmatic | `LangChainRetrieverAdapter` |
+| Adapter              | Type         | Configuration                  |
+| -------------------- | ------------ | ------------------------------ |
+| **ChromaDB**   | Direct       | `type: chroma`               |
+| **Pinecone**   | Direct       | `type: pinecone`             |
+| **Qdrant**     | Direct       | `type: qdrant`               |
+| **HTTP API**   | Direct       | `type: http`                 |
+| **LangChain**  | Programmatic | `LangChainRetrieverAdapter`  |
 | **LlamaIndex** | Programmatic | `LlamaIndexRetrieverAdapter` |
 
 ### ChromaDB Example
@@ -376,8 +353,6 @@ retriever:
 
 ## GitHub Actions
 
-The package-index example below requires publication of v0.2.0. Configure your retriever and make its reviewed index or endpoint available to the runner. For the reusable workflow, trusted baseline artifact restoration, and one-evaluation PR feedback, see [CI/CD integration](docs/integrations/cicd.md).
-
 ```yaml
 name: RAG Regression Check
 
@@ -397,12 +372,15 @@ jobs:
 ## Match Modes
 
 ### ID Match (`match_mode: "id"`)
+
 Exact string match on chunk/document IDs. Best when you control the IDs in your vector store.
 
 ### Text Match (`match_mode: "text"`)
+
 Case-insensitive substring matching. Checks if the required text appears anywhere in the retrieved documents.
 
 ### Semantic Match (`match_mode: "semantic"`)
+
 Word-frequency cosine similarity. Measures lexical overlap; it does not use neural embeddings or guarantee matching paraphrases.
 
 ## Current limitations
@@ -456,7 +434,3 @@ MIT License — see [LICENSE](LICENSE) for details.
 ---
 
 <div align="center">
-
-[Website](https://endevsols.com) • [GitHub](https://github.com/ENDEVSOLS) • [Documentation](https://github.com/ENDEVSOLS/LongProbe)
-
-</div>
