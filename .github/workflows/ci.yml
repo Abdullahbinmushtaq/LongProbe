@@ -51,6 +51,8 @@ jobs:
           version: "latest"
       - run: uv sync
       - run: uv build
+      - name: Verify PyPI README image links
+        run: uv run python examples/verify_pypi_readme.py
       - name: Verify wheel in a base-only environment outside the checkout
         run: |
           uv venv "$RUNNER_TEMP/longprobe-wheel" --python 3.12

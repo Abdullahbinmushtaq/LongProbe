@@ -68,3 +68,7 @@ Individual recording does not perform the asset-copy steps. Use `make demos` to 
 ## Editing presentation
 
 Keep the existing theme, font, dimensions, and README layout. Adjust tape pauses if a scenario needs more reading time. Display the quality verdict and comparison compatibility alongside recall; a good average or zero regression count alone does not establish deployment readiness.
+
+## Local previews and PyPI images
+
+The root README uses local `assets/*.gif` links, so its preview immediately shows regenerated files. Package builds automatically replace those image links in the distribution description with public URLs using the package version's Git tag. The local README stays unchanged. See the [release process](../docs/contributing.md#release-process) for the configured image repository, tag requirement, and verification command.
